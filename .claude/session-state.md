@@ -1,73 +1,57 @@
-# Session State Checkpoint
-Generated: 2026-05-23 (Emergency Context Clear)
-Reason: Context threshold exceeded (95%+)
+# Session State: Spam Reporting System Implementation
 
-## Execution Mode
-Mode: unattended
-Auto-Continue: true
+**Generated**: 2026-05-23 (context: 57%)  
+**Task**: Wire up automatic spam/reputation reporting in qDHT live node
 
-## Current Task
-Write Phase 5 (Content Providers) implementation plan to docs/superpowers/plans/2026-05-23-content-providers.md
+## ✅ Completed
 
-## Progress So Far
-✓ Saved session state with execution mode
-✓ Committed checkpoint
-✓ Read spec from docs/superpowers/specs/2026-05-23-content-providers-design.md
-→ NOW: About to invoke superpowers:writing-plans skill
+Added `buildReputationDelta()` function to `src/core/protocol/delta.ts`:
+- Builds kind 10802 events with target pubkey and delta score
+- Includes `ReputationDelta` and `ReputationDeltaContent` interfaces
 
-## Spec Summary (from design doc)
-- Section 1: ContentProvider interface (PieceDescriptor, ContentProvider, ContentMeta, ContentLocation)
-- Section 2: HttpProvider (Node.js fetch + Range headers, no new deps)
-- Section 3: Nip96Provider (upload-only via multipart POST)
-- Section 4: ContentProviderRegistry (ordered provider routing)
-- Section 5: PieceFetcherService (parallel fetch, rare-first, automatic fallback, integrity verification)
-- Section 6: Integration with QDHTNode.start() and get command
+## 📋 Remaining Tasks
 
-## Remaining Work
-1. Invoke superpowers:writing-plans skill
-2. Write comprehensive TDD implementation plan with:
-   - Bite-sized tasks (2-5 min each)
-   - Exact file paths for each task
-   - Complete code in each step
-   - Exact commands with expected output
-   - Frequent commits
-3. Save to docs/superpowers/plans/2026-05-23-content-providers.md
-4. Git commit with message: "docs: Phase 5 content providers implementation plan"
-5. Offer execution options
+### 1. sync-manager.ts - Penalize bad signatures
+**File**: `src/node/sync-manager.ts`, method `handleAnnouncement()` (~line 139)
+- When `verifyEvent()` fails (line 143), before returning add:
+  ```typescript
+  this.reputationMap.adjust(event.pubkey, -0.1)
+  this.broadcastReputationDelta(event.pubkey, -0.1)
+  ```
+- Add helper method that creates and broadcasts reputation delta event
 
-## Key Design Decisions (from spec)
-- HTTP provider: streaming via Node.js fetch + Range headers
-- NIP-96 scope: upload-only (download via HttpProvider)
-- Piece fetcher: standalone service in src/node/
-- Fallback: automatic
-- Registry: ordered provider list
+### 2. piece-fetcher-service.ts - Penalize bad hashes  
+**File**: `src/node/piece-fetcher-service.ts`, method `fetchContent()` (~line 83)
+- When hash mismatch (line 83-85), penalize providers:
+  ```typescript
+  for (const task of selected) {
+    this.reputationMap.adjust(task.nodeId, -0.2)
+  }
+  ```
+- Also on fetch errors (line 129): penalize nodeId by -0.05
 
-## Active Files
-- docs/superpowers/specs/2026-05-23-content-providers-design.md ✓ (read)
-- docs/superpowers/plans/2026-05-23-content-providers.md (to be written)
+### 3. sync-manager.ts - Merge received reputation deltas
+**File**: `src/node/sync-manager.ts`, method `handleDeltaResponse()` (~line 195)
+- Parse reputationDeltas array from delta response payload
+- For each delta, merge into local map via `reputationMap.merge()`
 
-## Next Immediate Step
-Call superpowers:writing-plans skill with the following prompt:
+### 4. sync-manager.ts - Include deltas in delta responses
+**File**: `src/node/sync-manager.ts`, method `handleDeltaRequest()` (~line 165)
+- Collect recent reputation delta events (kind 10802) from eventLog
+- Serialize and include in `reputationDeltas` array of response (line 189)
 
-"Write implementation plan for Phase 5 Content Providers. Use the spec at docs/superpowers/specs/2026-05-23-content-providers-design.md.
+## Imports Needed
+```typescript
+import { buildReputationDelta } from '../core/protocol/delta.js'
+```
 
-Create detailed TDD implementation plan with bite-sized tasks (2-5 min each):
-1. ContentProvider interface types (src/core/content/provider.ts)
-2. HttpProvider implementation + tests
-3. Nip96Provider upload + tests
-4. ContentProviderRegistry + tests
-5. PieceFetcherService + tests
-6. QDHTNode wiring in start()
-7. Updated get command
+## Penalty Schedule
+- Bad signature: -0.1
+- Bad content hash: -0.2
+- Fetch error: -0.05
 
-Each task must include:
-- Exact file paths
-- Complete code listings
-- Exact test commands with expected output
-- Git commit message
-
-Save to: docs/superpowers/plans/2026-05-23-content-providers.md"
-
-Then commit and offer execution options.
-
-NO PAUSES. Auto-continue mode.
+## Test Commands
+```bash
+npm run test           # all tests
+npm run sim:spam      # spam scenario
+```

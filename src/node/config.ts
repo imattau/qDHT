@@ -7,6 +7,8 @@ export interface QDHTConfig {
   peers: string[]
   relays?: string[]
   nip96Servers?: string[]
+  quicPeers?: string[]
+  quicListenPort?: number
   port: number
   dataDir: string
 }
@@ -16,6 +18,8 @@ export interface ConfigOverrides {
   peers?: string[]
   relays?: string[]
   nip96Servers?: string[]
+  quicPeers?: string[]
+  quicListenPort?: number
   dataDir?: string
 }
 
@@ -55,6 +59,16 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     throw new Error('Config nip96Servers must be an array of strings')
   }
 
+  const quicPeers = candidate.quicPeers
+  if (quicPeers !== undefined && (!Array.isArray(quicPeers) || !quicPeers.every((peer) => typeof peer === 'string'))) {
+    throw new Error('Config quicPeers must be an array of strings')
+  }
+
+  const quicListenPort = candidate.quicListenPort
+  if (quicListenPort !== undefined && (typeof quicListenPort !== 'number' || !Number.isFinite(quicListenPort))) {
+    throw new Error('Config quicListenPort must be a number')
+  }
+
   const port = candidate.port
   if (typeof port !== 'number' || !Number.isFinite(port)) {
     throw new Error('Config missing port')
@@ -70,6 +84,8 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     peers,
     relays,
     nip96Servers,
+    quicPeers,
+    quicListenPort,
     port,
     dataDir,
   }
@@ -82,6 +98,8 @@ export async function loadConfig(configPath: string, overrides: ConfigOverrides 
   if (overrides.peers !== undefined) config.peers = overrides.peers
   if (overrides.relays !== undefined) config.relays = overrides.relays
   if (overrides.nip96Servers !== undefined) config.nip96Servers = overrides.nip96Servers
+  if (overrides.quicPeers !== undefined) config.quicPeers = overrides.quicPeers
+  if (overrides.quicListenPort !== undefined) config.quicListenPort = overrides.quicListenPort
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
   return config
 }
@@ -100,6 +118,7 @@ export async function initConfig(configPath: string, defaultDataDir: string): Pr
   const config: QDHTConfig = {
     identity: { privkey: keypair.privkey },
     peers: [],
+    quicPeers: [],
     port: 7777,
     dataDir: defaultDataDir,
   }

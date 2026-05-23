@@ -21,6 +21,8 @@ describe('loadConfig', () => {
       peers: ['ws://localhost:7778'],
       relays: ['wss://relay.example.com'],
       nip96Servers: ['https://nip96.example.com/upload'],
+      quicPeers: ['quic://localhost:8888'],
+      quicListenPort: 8888,
       port: 7777,
       dataDir: tmpDir,
     }
@@ -31,6 +33,8 @@ describe('loadConfig', () => {
     expect(loaded.peers).toEqual(['ws://localhost:7778'])
     expect(loaded.relays).toEqual(['wss://relay.example.com'])
     expect(loaded.nip96Servers).toEqual(['https://nip96.example.com/upload'])
+    expect(loaded.quicPeers).toEqual(['quic://localhost:8888'])
+    expect(loaded.quicListenPort).toBe(8888)
   })
 
   it('throws on missing identity.privkey', async () => {
@@ -67,6 +71,18 @@ describe('loadConfig', () => {
     await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
     await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('nip96Servers')
   })
+
+  it('throws on invalid quicPeers array', async () => {
+    const bad = { identity: { privkey: 'f'.repeat(64) }, peers: [], quicPeers: [1, 2], port: 7777, dataDir: tmpDir }
+    await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
+    await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('quicPeers')
+  })
+
+  it('throws on invalid quicListenPort', async () => {
+    const bad = { identity: { privkey: '1'.repeat(64) }, peers: [], quicListenPort: 'abc', port: 7777, dataDir: tmpDir }
+    await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
+    await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('quicListenPort')
+  })
 })
 
 describe('initConfig', () => {
@@ -76,6 +92,7 @@ describe('initConfig', () => {
     expect(cfg.identity.privkey).toMatch(/^[0-9a-f]{64}$/)
     expect(cfg.port).toBe(7777)
     expect(cfg.peers).toEqual([])
+    expect(cfg.quicPeers).toEqual([])
   })
 
   it('returns existing config if file exists', async () => {
@@ -83,6 +100,7 @@ describe('initConfig', () => {
     const existing: QDHTConfig = {
       identity: { privkey: 'c'.repeat(64) },
       peers: [],
+      quicPeers: [],
       port: 8888,
       dataDir: tmpDir,
     }

@@ -65,7 +65,8 @@ export class PieceFetcherService extends EventEmitter {
           return
         }
 
-        const data = await this.fetchPiece(sourceUrl, index, pieceSize, totalPieces)
+        const task = selected.find((t) => t.pieceIndex === index)
+        const data = await this.fetchPiece(sourceUrl, index, pieceSize, totalPieces, task?.nodeId)
         pieces[index] = data
         cache.set(index, data)
         this.replicaStore.addPiece(hash, index)
@@ -81,6 +82,9 @@ export class PieceFetcherService extends EventEmitter {
     const assembled = Buffer.concat(pieces.map((piece) => piece ?? Buffer.alloc(0)))
     const digest = createHash('sha256').update(assembled).digest('hex')
     if (digest !== hash) {
+      for (const task of selected) {
+        this.reputationMap.adjust(task.nodeId, -0.2)
+      }
       throw new ContentIntegrityError(`assembled hash mismatch for ${qkey}`)
     }
     return assembled
@@ -112,7 +116,7 @@ export class PieceFetcherService extends EventEmitter {
     return providers
   }
 
-  private async fetchPiece(sourceUrl: string, pieceIndex: number, pieceSize: number, totalPieces: number): Promise<Buffer> {
+  private async fetchPiece(sourceUrl: string, pieceIndex: number, pieceSize: number, totalPieces: number, nodeId?: string): Promise<Buffer> {
     const descriptor: PieceDescriptor = {
       url: sourceUrl,
       pieceIndex,
@@ -128,6 +132,9 @@ export class PieceFetcherService extends EventEmitter {
         return buffer
       } catch (err) {
         lastError = err
+        if (nodeId) {
+          this.reputationMap.adjust(nodeId, -0.05)
+        }
       }
     }
 

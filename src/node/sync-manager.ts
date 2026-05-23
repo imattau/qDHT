@@ -3,8 +3,9 @@ import { verifyEvent, signAnnouncement } from '../core/identity/signing.js'
 import { NeighbourStateMap } from '../core/neighbour-state.js'
 import { Propagator } from '../core/propagation/propagator.js'
 import { buildAnnouncement, isValidAnnouncement } from '../core/protocol/announcement.js'
-import { buildDeltaRequest, buildDeltaResponse } from '../core/protocol/delta.js'
+import { buildDeltaRequest, buildDeltaResponse, buildReputationDelta } from '../core/protocol/delta.js'
 import { getTag } from '../core/nostr/tags.js'
+import { ReputationMap } from '../core/protocol/reputation.js'
 import type { Transport } from './transport.js'
 
 export interface SyncManagerOptions {
@@ -12,6 +13,7 @@ export interface SyncManagerOptions {
   privkey: string
   propagator: Propagator
   neighbourState: NeighbourStateMap
+  reputationMap: ReputationMap
   transports: Transport[]
 }
 
@@ -141,6 +143,8 @@ export class SyncManager {
       return
     }
     if (isSignedEvent(event) && !verifyEvent(event)) {
+      this.opts.reputationMap.adjust(event.pubkey, -0.1)
+      this.broadcastReputationDelta(event.pubkey, -0.1)
       return
     }
 
@@ -177,6 +181,8 @@ export class SyncManager {
         announcements.push(JSON.stringify(stored))
       } else if (stored.kind === 10801) {
         replicas.push(JSON.stringify(stored))
+      } else if (stored.kind === 10802) {
+        reputationDeltas.push(JSON.stringify(stored))
       }
     }
 
@@ -214,9 +220,34 @@ export class SyncManager {
           this.eventLog.set(id, replica)
         }
       }
+      for (const raw of payload.reputationDeltas) {
+        const delta = JSON.parse(raw) as AnyEvent
+        try {
+          const deltaContent = JSON.parse(delta.content) as { targetPubkey: string; delta: number }
+          this.opts.reputationMap.adjust(deltaContent.targetPubkey, deltaContent.delta)
+          const id = (delta as AnyEvent & { id?: string }).id ?? `${delta.pubkey}-${delta.created_at}`
+          if (!this.eventLog.has(id)) {
+            this.eventLog.set(id, delta)
+          }
+        } catch {
+          continue
+        }
+      }
     } catch {
       return
     }
+  }
+
+  private broadcastReputationDelta(targetPubkey: string, delta: number): void {
+    const event = buildReputationDelta({
+      pubkey: this.opts.pubkey,
+      targetPubkey,
+      delta,
+    })
+    const signed = signAnnouncement(event, this.opts.privkey)
+    const id = signed.id ?? `${signed.pubkey}-${signed.created_at}`
+    this.eventLog.set(id, signed)
+    this.broadcast(signed)
   }
 
   private broadcast(msg: unknown, excludePeerId?: string): void {

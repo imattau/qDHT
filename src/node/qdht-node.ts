@@ -14,6 +14,7 @@ import { ContentStore, type ContentLocation, type PutMeta } from './content-stor
 import type { QDHTConfig } from './config.js'
 import { PeerManager } from './peer-manager.js'
 import { RelayAdapter } from './relay-adapter.js'
+import { QuicAdapter } from './quic-adapter.js'
 import { SyncManager } from './sync-manager.js'
 import type { Transport } from './transport.js'
 
@@ -45,6 +46,7 @@ export class QDHTNode {
   private replicaStore: ReplicaStore
   private reputationMap: ReputationMap
   private relayAdapter: RelayAdapter | null = null
+  private quicAdapter: QuicAdapter | null = null
   private rpcServer: NetServer | null = null
   private graph: GraphState
   private propagator: Propagator
@@ -85,6 +87,16 @@ export class QDHTNode {
       transports.push(this.relayAdapter)
     }
 
+    if ((config.quicPeers && config.quicPeers.length > 0) || config.quicListenPort !== undefined) {
+      this.quicAdapter = new QuicAdapter({
+        pubkey: this.kp.pubkey,
+        peers: config.quicPeers ?? [],
+        listenPort: config.quicListenPort,
+        dataDir: config.dataDir,
+      })
+      transports.push(this.quicAdapter)
+    }
+
     this.syncManager = new SyncManager({
       pubkey: this.kp.pubkey,
       privkey: this.kp.privkey,
@@ -107,8 +119,8 @@ export class QDHTNode {
     }
     this.started = true
     await mkdir(this.config.dataDir, { recursive: true })
-    await this.connect()
     await this.peerManager.listen()
+    await this.connect()
     await this.startRpc()
   }
 
@@ -131,6 +143,7 @@ export class QDHTNode {
     }
     await mkdir(this.config.dataDir, { recursive: true })
     await this.relayAdapter?.connect()
+    await this.quicAdapter?.connect()
     for (const peer of this.config.peers) {
       this.peerManager.connect(peer)
     }
@@ -143,6 +156,7 @@ export class QDHTNode {
     }
     this.fetchNetworkConnected = false
     await this.relayAdapter?.close()
+    await this.quicAdapter?.close()
     await this.peerManager.close()
     this.started = false
   }
@@ -204,7 +218,7 @@ export class QDHTNode {
   }
 
   peerCount(): number {
-    return this.peerManager.peers().length
+    return this.peerManager.peers().length + (this.quicAdapter?.peers().length ?? 0)
   }
 
   hasReceivedKey(qkey: string): boolean {
