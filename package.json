@@ -1,0 +1,30 @@
+{
+  "name": "qdht",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit",
+    "node:build": "tsc --noEmit",
+    "node:start": "tsx bin/qdht-node.ts start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sim:stable": "tsx src/sim/scenarios/stable.ts",
+    "sim:churn": "tsx src/sim/scenarios/churn.ts",
+    "sim:spam": "tsx src/sim/scenarios/spam.ts",
+    "sim:swarm": "tsx src/sim/scenarios/swarming.ts",
+    "sim:dht-baseline": "tsx src/sim/scenarios/dht-baseline.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "nostr-tools": "^2.23.5",
+    "ws": "^8.21.0"
+  }
+}
