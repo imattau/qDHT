@@ -1,42 +1,59 @@
 # Session State Checkpoint
 Generated: 2026-05-23
-Reason: Context threshold exceeded (81.6%)
 
 ## Execution Mode
-Mode: interactive
-Auto-Continue: false
+Mode: unattended
+Auto-Continue: true
 
 ## Current Task
-Brainstorming and speccing Phase 2: Nostr Event Layer for qDHT.
+Write Phase 5 (Content Providers) implementation plan based on the approved spec.
 
 ## Progress Summary
-- Phase 1 sim library: spec + plan written and committed
-- Phase 2 brainstorm started via subagent (agent ae6f6b4969f734384 - now complete)
-- Q1 answered: Option B — signing layer in src/core/identity/, sim leaves sig='', live node calls signing
-- Q2 asked: crypto library — @noble/curves vs nostr-tools vs @welshman/util
-- Q2 NOT YET ANSWERED by user
+- Phase 1 (Simulation Library): spec + plan written and committed ✓
+- Phase 2 (Nostr Event Layer): spec + plan written and committed ✓
+- Phase 3 (Live Node): spec + plan written and committed ✓
+- Phase 4 (Relay Adapter): spec + plan written and committed ✓
+- Phase 5 (Content Providers):
+  - Brainstorming complete (Q1-Q4 answered, approaches proposed)
+  - All 6 design sections approved by user ✓
+  - Spec written to docs/superpowers/specs/2026-05-23-content-providers-design.md and committed ✓
+  - NOW: Writing implementation plan
 
 ## Remaining Work
-1. Get user answer to Q2 (crypto library)
-2. Ask Q3: NIP-44 encryption — include in Phase 2 or defer?
-3. Propose 2-3 approaches for Phase 2 architecture
-4. Present design in sections, get user approval
-5. Write spec to docs/superpowers/specs/2026-05-23-nostr-event-layer-design.md and commit
-6. Ask user to review spec
-7. Invoke writing-plans skill to produce implementation plan
+1. Write implementation plan to docs/superpowers/plans/2026-05-23-content-providers.md
+   - Use writing-plans skill
+   - Cover: ContentProvider interface, HttpProvider, Nip96Provider, ContentProviderRegistry, PieceFetcherService, QDHTNode wiring, get command
+   - Use TDD throughout
+   - Bite-sized tasks (2-5 min each)
+   - Include exact file paths, complete code, exact commands with expected output
+   - Frequent commits
+2. Git commit the plan
+3. Offer execution options (Subagent-Driven vs Inline)
 
-## Key Decisions So Far
-- Crypto lives in src/core/identity/ (not outside core)
-- Signing is a layer on top of Phase 1 types — sim unsigned, live node signs
-- Phase 1 types unchanged (sig stays '' in sim)
+## Key Decisions (Phase 5)
+- HTTP provider: streaming via Node.js fetch + Range headers (no new deps)
+- NIP-96 scope: upload-only (download uses HttpProvider)
+- Piece fetcher: standalone service in src/node/
+- Fallback policy: automatic
+- Architecture: ContentProviderRegistry + pluggable providers
 
-## Context for Continuation
-Working dir: /home/mattthomson/workspace/qDHT
-Design spec goes to: docs/superpowers/specs/2026-05-23-nostr-event-layer-design.md
-CLAUDE.md has full project context
-Phase 1 spec: docs/superpowers/specs/2026-05-23-sim-library-design.md
+## Active Files
+- docs/superpowers/specs/2026-05-23-content-providers-design.md (written, committed)
+- docs/superpowers/plans/2026-05-23-content-providers.md (to be written NOW)
 
-## Q2 Options (waiting for user answer)
-A) @noble/curves — low-level, write NIP-01 encoding yourself
-B) nostr-tools — full NIP-01 out of the box, recommended
-C) @welshman/util — lighter, less community
+## Continuation Instructions
+1. Invoke superpowers:writing-plans skill to write plan
+2. Read spec at docs/superpowers/specs/2026-05-23-content-providers-design.md
+3. Create detailed TDD implementation plan with bite-sized tasks (2-5 min each):
+   - ContentProvider interface types (provider.ts)
+   - HttpProvider with streaming + Range headers + tests
+   - Nip96Provider upload-only + tests
+   - ContentProviderRegistry + tests
+   - PieceFetcherService parallel fetch with fallback + tests
+   - QDHTNode wiring (start() additions)
+   - Updated get command (local check first, progress events, timeout)
+4. Save to docs/superpowers/plans/2026-05-23-content-providers.md
+5. Git commit: "docs: Phase 5 content providers implementation plan"
+6. Offer execution options: "Plan complete. Two execution options: 1. Subagent-Driven (recommended) 2. Inline Execution"
+
+Do NOT pause for confirmation - this is unattended mode with auto_continue: true.
