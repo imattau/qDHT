@@ -5,6 +5,7 @@ import { generateKeypair } from '../core/identity/keys.js'
 export interface QDHTConfig {
   identity: { privkey: string }
   peers: string[]
+  relays?: string[]
   port: number
   dataDir: string
 }
@@ -12,6 +13,7 @@ export interface QDHTConfig {
 export interface ConfigOverrides {
   port?: number
   peers?: string[]
+  relays?: string[]
   dataDir?: string
 }
 
@@ -41,6 +43,11 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     throw new Error('Config missing peers array')
   }
 
+  const relays = candidate.relays
+  if (relays !== undefined && (!Array.isArray(relays) || !relays.every((relay) => typeof relay === 'string'))) {
+    throw new Error('Config relays must be an array of strings')
+  }
+
   const port = candidate.port
   if (typeof port !== 'number' || !Number.isFinite(port)) {
     throw new Error('Config missing port')
@@ -54,6 +61,7 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
   return {
     identity: { privkey: validatePrivkey((identity as Record<string, unknown>).privkey) },
     peers,
+    relays,
     port,
     dataDir,
   }
@@ -64,6 +72,7 @@ export async function loadConfig(configPath: string, overrides: ConfigOverrides 
   const config = validateConfig(raw, configPath)
   if (overrides.port !== undefined) config.port = overrides.port
   if (overrides.peers !== undefined) config.peers = overrides.peers
+  if (overrides.relays !== undefined) config.relays = overrides.relays
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
   return config
 }

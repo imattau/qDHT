@@ -5,14 +5,14 @@ import { Propagator } from '../core/propagation/propagator.js'
 import { buildAnnouncement, isValidAnnouncement } from '../core/protocol/announcement.js'
 import { buildDeltaRequest, buildDeltaResponse } from '../core/protocol/delta.js'
 import { getTag } from '../core/nostr/tags.js'
+import type { Transport } from './transport.js'
 
 export interface SyncManagerOptions {
   pubkey: string
   privkey: string
   propagator: Propagator
   neighbourState: NeighbourStateMap
-  broadcast: (msg: unknown, excludePeerId?: string) => void
-  send: (peerId: string, msg: unknown) => void
+  transports: Transport[]
 }
 
 type AnyEvent = {
@@ -29,7 +29,13 @@ export class SyncManager {
   private eventLog = new Map<string, AnyEvent>()
   private peerLastSeen = new Map<string, number>()
 
-  constructor(private opts: SyncManagerOptions) {}
+  constructor(private opts: SyncManagerOptions) {
+    for (const transport of this.opts.transports) {
+      transport.onMessage((msg, peerId) => this.handleMessage(msg, peerId))
+      transport.onPeerConnected((peerId) => this.onPeerConnected(peerId))
+      transport.onPeerDisconnected((peerId) => this.peerLastSeen.delete(peerId))
+    }
+  }
 
   handleMessage(msg: unknown, fromPeerId: string): void {
     if (!msg || typeof msg !== 'object') {
@@ -72,7 +78,7 @@ export class SyncManager {
     const signed = signAnnouncement(announcement, this.opts.privkey)
     this.eventLog.set(signed.id, signed)
     this.opts.propagator.addNote(signed.id, this.opts.pubkey, signed.pubkey, signed.created_at)
-    this.opts.broadcast(signed)
+    this.broadcast(signed)
     return signed
   }
 
@@ -81,7 +87,7 @@ export class SyncManager {
       pubkey: this.opts.pubkey,
       since: since ?? this.peerLastSeen.get(peerId) ?? 0,
     })
-    this.opts.send(peerId, req)
+    this.send(peerId, req)
   }
 
   onPeerConnected(peerId: string): void {
@@ -102,7 +108,7 @@ export class SyncManager {
     this.eventLog.set(id, event)
     this.opts.propagator.addNote(id, fromPeerId, event.pubkey, event.created_at)
     this.opts.neighbourState.recordInbound(qkey, hash, id, fromPeerId, event.created_at)
-    this.opts.broadcast(event, fromPeerId)
+    this.broadcast(event, fromPeerId)
   }
 
   private handleReplica(event: AnyEvent, fromPeerId: string): void {
@@ -141,7 +147,7 @@ export class SyncManager {
       reputationDeltas,
       expired,
     })
-    this.opts.send(fromPeerId, response)
+    this.send(fromPeerId, response)
   }
 
   private handleDeltaResponse(event: AnyEvent): void {
@@ -168,6 +174,18 @@ export class SyncManager {
       }
     } catch {
       return
+    }
+  }
+
+  private broadcast(msg: unknown, excludePeerId?: string): void {
+    for (const transport of this.opts.transports) {
+      transport.broadcast(msg, excludePeerId)
+    }
+  }
+
+  private send(peerId: string, msg: unknown): void {
+    for (const transport of this.opts.transports) {
+      transport.send(peerId, msg)
     }
   }
 }

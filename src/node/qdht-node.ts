@@ -8,7 +8,9 @@ import { Propagator } from '../core/propagation/propagator.js'
 import { ContentStore, type ContentLocation, type PutMeta } from './content-store.js'
 import type { QDHTConfig } from './config.js'
 import { PeerManager } from './peer-manager.js'
+import { RelayAdapter } from './relay-adapter.js'
 import { SyncManager } from './sync-manager.js'
+import type { Transport } from './transport.js'
 
 type RpcRequest =
   | { cmd: 'peers' }
@@ -33,6 +35,7 @@ export class QDHTNode {
   private peerManager: PeerManager
   private syncManager: SyncManager
   private contentStore: ContentStore
+  private relayAdapter: RelayAdapter | null = null
   private rpcServer: NetServer | null = null
   private graph: GraphState
   private propagator: Propagator
@@ -54,20 +57,21 @@ export class QDHTNode {
       privkey: this.kp.privkey,
     })
 
+    const transports: Transport[] = [this.peerManager]
+    if (config.relays && config.relays.length > 0) {
+      this.relayAdapter = new RelayAdapter({
+        privkey: this.kp.privkey,
+        relayUrls: config.relays,
+      })
+      transports.push(this.relayAdapter)
+    }
+
     this.syncManager = new SyncManager({
       pubkey: this.kp.pubkey,
       privkey: this.kp.privkey,
       propagator: this.propagator,
       neighbourState: this.neighbourState,
-      broadcast: (msg, excludePeerId) => this.peerManager.broadcast(msg, excludePeerId),
-      send: (peerId, msg) => this.peerManager.send(peerId, msg),
-    })
-
-    this.peerManager.onMessage((msg, peerId) => {
-      this.syncManager.handleMessage(msg, peerId)
-    })
-    this.peerManager.onPeerConnected((peerId) => {
-      this.syncManager.onPeerConnected(peerId)
+      transports,
     })
   }
 
@@ -78,6 +82,7 @@ export class QDHTNode {
     this.started = true
     await mkdir(this.config.dataDir, { recursive: true })
     await this.peerManager.listen()
+    await this.relayAdapter?.connect()
     for (const peer of this.config.peers) {
       this.peerManager.connect(peer)
     }
@@ -89,6 +94,7 @@ export class QDHTNode {
       return
     }
     this.started = false
+    await this.relayAdapter?.close()
     await this.peerManager.close()
     if (this.rpcServer) {
       await new Promise<void>((resolve) => this.rpcServer?.close(() => resolve()))

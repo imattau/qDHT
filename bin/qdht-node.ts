@@ -23,6 +23,7 @@ async function loadNodeConfig(
   const config = await initConfig(configPath, overrides.dataDir ?? DEFAULT_DATA_DIR)
   if (overrides.port !== undefined) config.port = overrides.port
   if (overrides.peers !== undefined) config.peers = overrides.peers
+  if (overrides.relays !== undefined) config.relays = overrides.relays
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
   return config
 }

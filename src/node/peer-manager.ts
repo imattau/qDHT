@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
+import type { Transport } from './transport.js'
 
 export interface PeerInfo {
   pubkey: string
@@ -46,7 +47,7 @@ function safeJsonParse(data: RawData): unknown | null {
   }
 }
 
-export class PeerManager {
+export class PeerManager implements Transport {
   private server: WebSocketServer | null = null
   private peerMap = new Map<string, ConnectedPeer>()
   private urlToPeerId = new Map<string, string>()
@@ -54,6 +55,8 @@ export class PeerManager {
   private messageHandlers: MessageHandler[] = []
   private peerConnectedHandlers: PeerHandler[] = []
   private peerDisconnectedHandlers: PeerHandler[] = []
+  private transportConnectedHandlers: Array<(peerId: string) => void> = []
+  private transportDisconnectedHandlers: Array<(peerId: string) => void> = []
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private closed = false
 
@@ -151,12 +154,20 @@ export class PeerManager {
     this.messageHandlers.push(handler)
   }
 
-  onPeerConnected(handler: PeerHandler): void {
-    this.peerConnectedHandlers.push(handler)
+  onPeerConnected(handler: ((peerId: string) => void) | PeerHandler): void {
+    if (handler.length === 1) {
+      this.transportConnectedHandlers.push(handler as (peerId: string) => void)
+      return
+    }
+    this.peerConnectedHandlers.push(handler as PeerHandler)
   }
 
-  onPeerDisconnected(handler: PeerHandler): void {
-    this.peerDisconnectedHandlers.push(handler)
+  onPeerDisconnected(handler: ((peerId: string) => void) | PeerHandler): void {
+    if (handler.length === 1) {
+      this.transportDisconnectedHandlers.push(handler as (peerId: string) => void)
+      return
+    }
+    this.peerDisconnectedHandlers.push(handler as PeerHandler)
   }
 
   async close(): Promise<void> {
@@ -293,6 +304,9 @@ export class PeerManager {
     for (const handler of this.peerConnectedHandlers) {
       handler(peerId, info)
     }
+    for (const handler of this.transportConnectedHandlers) {
+      handler(peerId)
+    }
   }
 
   private notifyDisconnected(peer: ConnectedPeer): void {
@@ -305,6 +319,9 @@ export class PeerManager {
     }
     for (const handler of this.peerDisconnectedHandlers) {
       handler(peerId, info)
+    }
+    for (const handler of this.transportDisconnectedHandlers) {
+      handler(peerId)
     }
   }
 

@@ -53,6 +53,27 @@ describe('PeerManager', () => {
     ws.close()
   })
 
+  it('calls transport-compatible peer connected handlers on handshake', async () => {
+    const p = nextPort()
+    pm = new PeerManager({ port: p, pubkey: 'a'.repeat(64), privkey: 'a'.repeat(64) })
+    await pm.listen()
+
+    const peerPubkey = 'd'.repeat(64)
+    const seen: string[] = []
+    pm.onPeerConnected((peerId: string) => {
+      seen.push(peerId)
+    })
+
+    const ws = new WebSocket(`ws://127.0.0.1:${p}`)
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'handshake', pubkey: peerPubkey }))
+    })
+
+    await waitFor(() => seen.includes(peerPubkey))
+    expect(seen).toContain(peerPubkey)
+    ws.close()
+  })
+
   it('calls onMessage handler when a peer sends a message', async () => {
     const p = nextPort()
     pm = new PeerManager({ port: p, pubkey: 'a'.repeat(64), privkey: 'a'.repeat(64) })
