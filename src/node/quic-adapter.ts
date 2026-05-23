@@ -315,7 +315,7 @@ export class QuicAdapter implements Transport {
     return this.addressToPeerId.get(peerId) === channel.peerId
   }
 
-  private async connectPeer(target: string): Promise<void> {
+  async connectPeer(target: string): Promise<void> {
     const parsed = parsePeerAddress(target)
     const state = this.outboundState.get(parsed.address) ?? { delayMs: RECONNECT_MIN_MS, timer: null, active: false }
     this.outboundState.set(parsed.address, state)

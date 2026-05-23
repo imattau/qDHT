@@ -62,6 +62,53 @@ async function rpcCall(sockPath: string, request: unknown): Promise<any> {
   })
 }
 
+function printRoute(route: {
+  identity: string
+  reachable: boolean
+  bestEndpoint: { transport: string; address: string; port?: number; confidence: number } | null
+  fallback: { transport: string; address: string; port?: number; confidence: number } | null
+  nat: { typeEstimate: string }
+  sequence: number
+  updatedAt: number
+}): void {
+  console.log(`Identity : ${route.identity}`)
+  console.log(`Reachable: ${route.reachable ? 'yes' : 'no'}`)
+  console.log(`NAT      : ${route.nat.typeEstimate}`)
+  console.log(`Sequence : ${route.sequence}`)
+  console.log(`Updated  : ${new Date(route.updatedAt).toISOString()}`)
+  if (route.bestEndpoint) {
+    const port = route.bestEndpoint.port !== undefined ? `:${route.bestEndpoint.port}` : ''
+    console.log(`Best     : ${route.bestEndpoint.transport}://${route.bestEndpoint.address}${port} (${route.bestEndpoint.confidence.toFixed(2)})`)
+  }
+  if (route.fallback) {
+    const port = route.fallback.port !== undefined ? `:${route.fallback.port}` : ''
+    console.log(`Fallback : ${route.fallback.transport}://${route.fallback.address}${port} (${route.fallback.confidence.toFixed(2)})`)
+  }
+}
+
+function summarizeEvent(raw: string): string {
+  try {
+    const event = JSON.parse(raw) as { kind?: number; pubkey?: string; tags?: string[][]; content?: string }
+    const parts: string[] = []
+    if (typeof event.kind === 'number') parts.push(`kind=${event.kind}`)
+    if (typeof event.pubkey === 'string') parts.push(`pubkey=${event.pubkey.slice(0, 12)}..`)
+    const qkey = event.tags?.find((tag) => tag[0] === 'qkey')?.[1]
+    const hash = event.tags?.find((tag) => tag[0] === 'hash')?.[1]
+    const name = event.tags?.find((tag) => tag[0] === 'name')?.[1]
+    const url = event.tags?.find((tag) => tag[0] === 'url')?.[1] ?? event.tags?.find((tag) => tag[0] === 'r')?.[1]
+    if (qkey) parts.push(`qkey=${qkey}`)
+    if (hash) parts.push(`hash=${hash.slice(0, 12)}..`)
+    if (name) parts.push(`name=${name}`)
+    if (url) parts.push(`url=${url}`)
+    if (typeof event.content === 'string' && event.content.length > 0) {
+      parts.push(`content=${event.content.slice(0, 48)}${event.content.length > 48 ? '…' : ''}`)
+    }
+    return parts.join(' ')
+  } catch {
+    return raw.slice(0, 96)
+  }
+}
+
 const program = new Command()
 program.name('qdht-node').version('0.1.0').description('qDHT node CLI')
 
@@ -193,6 +240,99 @@ program
     for (const replica of response.replicas) {
       const pub = `${replica.pubkey.slice(0, 10)}..`
       console.log(`${pub.padEnd(12)}  ${replica.lastSeen.padEnd(24)}  ${String(replica.pieceCount).padEnd(10)}  ${replica.totalPieces}`)
+    }
+  })
+
+program
+  .command('search <query>')
+  .description('Search identity routes or announcement metadata on a running node')
+  .option('--config <path>', 'Config file path', DEFAULT_CONFIG_PATH)
+  .option('--type <type>', 'Search type: identity, content, route, or replica', 'content')
+  .option('--timeout <ms>', 'Timeout in milliseconds', (value) => Number(value), 2000)
+  .option('--limit <n>', 'Max number of matches', (value) => Number(value), 25)
+  .option('--publisher <pubkey>', 'Filter by publisher')
+  .option('--qkey <qkey>', 'Filter by qkey')
+  .option('--hash <hash>', 'Filter by content hash')
+  .option('--name <name>', 'Filter by name')
+  .option('--mime <mime>', 'Filter by MIME type')
+  .option('--tag <tag>', 'Filter by tag')
+  .action(async (
+    query: string,
+    opts: {
+      config: string
+      type: 'identity' | 'content' | 'route' | 'replica'
+      timeout: number
+      limit: number
+      publisher?: string
+      qkey?: string
+      hash?: string
+      name?: string
+      mime?: string
+      tag?: string
+    },
+  ) => {
+    const config = await loadConfig(opts.config)
+    const sockPath = join(config.dataDir, 'qdht.sock')
+    const type = opts.type
+    const response = await rpcCall(sockPath, type === 'identity'
+      ? { cmd: 'search', type, query, timeoutMs: opts.timeout }
+      : {
+          cmd: 'search',
+          type,
+          query,
+          timeoutMs: opts.timeout,
+          limit: opts.limit,
+          publisher: opts.publisher,
+          qkey: opts.qkey,
+          hash: opts.hash,
+          name: opts.name,
+          mime: opts.mime,
+          tag: opts.tag,
+        }) as
+      | { route: null | { identity: string; reachable: boolean; bestEndpoint: { transport: string; address: string; port?: number; confidence: number } | null; fallback: { transport: string; address: string; port?: number; confidence: number } | null; nat: { typeEstimate: string }; sequence: number; updatedAt: number } }
+      | { response: null | { requestType: string; query: string; limit: number; announcements: string[]; replicas: string[]; routes: string[] } }
+      | { error: string }
+
+    if ('error' in response) {
+      console.error(response.error)
+      process.exitCode = 1
+      return
+    }
+
+    if ('route' in response) {
+      if (!response.route) {
+        console.log('No route found.')
+        return
+      }
+      printRoute(response.route)
+      return
+    }
+
+    if (!response.response) {
+      console.log('No matches found.')
+      return
+    }
+
+    console.log(`Request : ${response.response.requestType} "${response.response.query}"`)
+    console.log(`Limit   : ${response.response.limit}`)
+    console.log(`Counts  : announcements=${response.response.announcements.length} replicas=${response.response.replicas.length} routes=${response.response.routes.length}`)
+    if (response.response.announcements.length > 0) {
+      console.log('Announcements:')
+      for (const item of response.response.announcements) {
+        console.log(`  - ${summarizeEvent(item)}`)
+      }
+    }
+    if (response.response.replicas.length > 0) {
+      console.log('Replicas:')
+      for (const item of response.response.replicas) {
+        console.log(`  - ${summarizeEvent(item)}`)
+      }
+    }
+    if (response.response.routes.length > 0) {
+      console.log('Routes:')
+      for (const item of response.response.routes) {
+        console.log(`  - ${summarizeEvent(item)}`)
+      }
     }
   })
 

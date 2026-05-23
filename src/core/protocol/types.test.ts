@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildAnnouncement, isValidAnnouncement } from './announcement.js'
 import { buildDeltaRequest, buildDeltaResponse } from './delta.js'
 import { buildPieceManifest } from './piece-manifest.js'
+import { buildRequestAnnouncement, buildRequestResponse, isValidRequestAnnouncement, isValidRequestResponse } from './request.js'
 import { buildReplicaRecord } from './replica-record.js'
 
 describe('announcement', () => {
@@ -94,5 +95,64 @@ describe('pieceManifest', () => {
     })
     expect(manifest.kind).toBe(10803)
     expect(manifest.pieces).toHaveLength(2)
+  })
+})
+
+describe('requestAnnouncement', () => {
+  it('round-trips through JSON and stays metadata-only', () => {
+    const request = buildRequestAnnouncement({
+      pubkey: 'pk1',
+      type: 'content',
+      query: 'guide.pdf',
+      limit: 10,
+      ttl: 300,
+      publisher: 'pk2',
+      mime: 'application/pdf',
+      tag: 'docs',
+    })
+    const parsed = JSON.parse(JSON.stringify(request))
+    expect(isValidRequestAnnouncement(parsed)).toBe(true)
+    expect(parsed.kind).toBe(10804)
+    expect(JSON.parse(parsed.content)).toMatchObject({
+      type: 'content',
+      query: 'guide.pdf',
+      limit: 10,
+      ttl: 300,
+      publisher: 'pk2',
+      mime: 'application/pdf',
+      tag: 'docs',
+    })
+  })
+
+  it('rejects invalid request announcements', () => {
+    expect(isValidRequestAnnouncement({ kind: 10804, pubkey: 'pk1', tags: [], content: '{"query":1}', sig: '' })).toBe(false)
+    expect(isValidRequestAnnouncement(null)).toBe(false)
+  })
+})
+
+describe('requestResponse', () => {
+  it('round-trips through JSON and keeps references only', () => {
+    const response = buildRequestResponse({
+      pubkey: 'pk1',
+      requestId: 'req1',
+      requestType: 'content',
+      query: 'guide.pdf',
+      limit: 10,
+      announcements: ['{"kind":10800}'],
+      replicas: ['{"kind":10801}'],
+      routes: ['{"kind":10804}'],
+    })
+    const parsed = JSON.parse(JSON.stringify(response))
+    expect(isValidRequestResponse(parsed)).toBe(true)
+    expect(parsed.kind).toBe(10805)
+    expect(JSON.parse(parsed.content)).toMatchObject({
+      requestId: 'req1',
+      requestType: 'content',
+      query: 'guide.pdf',
+      limit: 10,
+      announcements: ['{"kind":10800}'],
+      replicas: ['{"kind":10801}'],
+      routes: ['{"kind":10804}'],
+    })
   })
 })

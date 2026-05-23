@@ -9,7 +9,14 @@
     "node:start": "tsx bin/qdht-node.ts start",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench:dht": "tsx src/bench/dht-benchmark.ts",
     "stress:quic": "tsx src/node/quic-stress.ts",
+    "example:hello": "tsx examples/hello-publish-get.ts",
+    "example:gossip": "tsx examples/peer-gossip-demo.ts",
+    "example:churn": "tsx examples/churn-recovery-demo.ts",
+    "example:spam": "tsx examples/spam-filter-demo.ts",
+    "example:reachability": "tsx examples/reachability-reflection-demo.ts",
+    "example:sqlite": "tsx examples/sqlite-persistence-demo.ts",
     "sim:stable": "tsx src/sim/scenarios/stable.ts",
     "sim:churn": "tsx src/sim/scenarios/churn.ts",
     "sim:spam": "tsx src/sim/scenarios/spam.ts",
@@ -24,8 +31,16 @@
     "vitest": "^1.6.0"
   },
   "dependencies": {
+    "@chainsafe/libp2p-noise": "^17.0.0",
+    "@chainsafe/libp2p-yamux": "^8.0.1",
+    "@libp2p/identify": "^4.1.6",
+    "@libp2p/kad-dht": "^16.3.0",
+    "@libp2p/memory": "^2.0.20",
+    "@libp2p/ping": "^3.1.5",
     "@matrixai/quic": "^2.0.9",
     "commander": "^14.0.3",
+    "libp2p": "^3.3.1",
+    "multiformats": "^14.0.0",
     "nostr-tools": "^2.23.5",
     "ws": "^8.21.0"
   }

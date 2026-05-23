@@ -3,6 +3,7 @@ import { createServer as createNetServer, type Server as NetServer } from 'node:
 import { join } from 'node:path'
 import { GraphState } from '../core/graph/graph-state.js'
 import { keypairFromHex } from '../core/identity/keys.js'
+import { ReachabilityDirectory, isDirectPeerRef, normalizeIdentityRef, resolveRouteAnnouncement, type ResolvedRoute } from '../core/discovery/reachability.js'
 import { NeighbourStateMap } from '../core/neighbour-state.js'
 import { ContentProviderRegistry } from '../core/content/provider-registry.js'
 import { PieceFetcherService } from './piece-fetcher-service.js'
@@ -16,12 +17,33 @@ import { PeerManager } from './peer-manager.js'
 import { RelayAdapter } from './relay-adapter.js'
 import { QuicAdapter } from './quic-adapter.js'
 import { SyncManager } from './sync-manager.js'
+import type { QDHTRequestPayload, QDHTRequestResponsePayload } from '../core/protocol/request.js'
+import type { StoredNostrEvent } from '../core/nostr/sqlite-store.js'
 import type { Transport } from './transport.js'
 
 type RpcRequest =
   | { cmd: 'peers' }
   | { cmd: 'replicas'; key: string }
   | { cmd: 'get'; key: string }
+  | {
+      cmd: 'search'
+      type: 'identity'
+      query: string
+      timeoutMs?: number
+    }
+  | {
+      cmd: 'search'
+      type: 'content' | 'route' | 'replica'
+      query: string
+      timeoutMs?: number
+      limit?: number
+      publisher?: string
+      qkey?: string
+      hash?: string
+      name?: string
+      mime?: string
+      tag?: string
+    }
 
 export interface PeerInfo {
   pubkey: string
@@ -37,6 +59,19 @@ export interface ReplicaInfo {
   totalPieces: number
 }
 
+export interface SearchAnnouncementsOptions {
+  type?: QDHTRequestPayload['type']
+  limit?: number
+  timeoutMs?: number
+  ttl?: number
+  publisher?: string
+  qkey?: string
+  hash?: string
+  name?: string
+  mime?: string
+  tag?: string
+}
+
 export class QDHTNode {
   private peerManager: PeerManager
   private syncManager: SyncManager
@@ -45,6 +80,7 @@ export class QDHTNode {
   private providerRegistry: ContentProviderRegistry
   private replicaStore: ReplicaStore
   private reputationMap: ReputationMap
+  private discoveryDirectory: ReachabilityDirectory
   private relayAdapter: RelayAdapter | null = null
   private quicAdapter: QuicAdapter | null = null
   private rpcServer: NetServer | null = null
@@ -71,6 +107,8 @@ export class QDHTNode {
         this.providerRegistry.register(new Nip96Provider({ serverUrl }))
       }
     }
+
+    this.discoveryDirectory = new ReachabilityDirectory(join(config.dataDir, 'nostr.sqlite'))
 
     this.peerManager = new PeerManager({
       port: config.port,
@@ -103,6 +141,7 @@ export class QDHTNode {
       propagator: this.propagator,
       neighbourState: this.neighbourState,
       reputationMap: this.reputationMap,
+      eventStorePath: join(config.dataDir, 'nostr.sqlite'),
       transports,
     })
 
@@ -127,6 +166,8 @@ export class QDHTNode {
 
   async stop(): Promise<void> {
     await this.disconnect()
+    this.syncManager.close()
+    this.discoveryDirectory.close()
     if (this.rpcServer) {
       await new Promise<void>((resolve) => this.rpcServer?.close(() => resolve()))
       this.rpcServer = null
@@ -146,7 +187,7 @@ export class QDHTNode {
     await this.relayAdapter?.connect()
     await this.quicAdapter?.connect()
     for (const peer of this.config.peers) {
-      this.peerManager.connect(peer)
+      await this.connectPeerRef(peer)
     }
     this.fetchNetworkConnected = true
   }
@@ -226,6 +267,83 @@ export class QDHTNode {
     return this.neighbourState.get(qkey) !== undefined
   }
 
+  getAnnouncementInfo(qkey: string): {
+    hash: string
+    totalPieces: number
+    pieceSize: number
+    sourceUrl?: string
+    name?: string
+    mime?: string
+  } | null {
+    return this.syncManager.getAnnouncementInfo(qkey)
+  }
+
+  async searchIdentity(identityRef: string, timeoutMs = 2_000): Promise<ResolvedRoute | null> {
+    const local = this.discoveryDirectory.resolve(identityRef)
+    if (local) {
+      return local
+    }
+
+    const response = await this.syncManager.searchRequest({
+      type: 'route',
+      query: identityRef,
+      limit: 5,
+      ttl: 300,
+    }, timeoutMs)
+
+    if (!response) {
+      return null
+    }
+
+    const parsedRoutes = this.parseRouteEvents(response.routes)
+    const normalizedIdentity = normalizeIdentityRef(identityRef)?.identity ?? identityRef.trim().toLowerCase()
+    return resolveRouteAnnouncement(normalizedIdentity, parsedRoutes)
+  }
+
+  async searchAnnouncements(query: string, options: SearchAnnouncementsOptions = {}): Promise<QDHTRequestResponsePayload | null> {
+    return await this.syncManager.searchRequest({
+      type: options.type ?? 'content',
+      query,
+      limit: options.limit ?? 25,
+      ttl: options.ttl ?? 300,
+      publisher: options.publisher,
+      qkey: options.qkey,
+      hash: options.hash,
+      name: options.name,
+      mime: options.mime,
+      tag: options.tag,
+    }, options.timeoutMs ?? 2_000)
+  }
+
+  private async connectPeerRef(peerRef: string): Promise<void> {
+    const targets = this.discoveryDirectory.resolvePeerTargets(peerRef)
+    if (targets.length === 0 && isDirectPeerRef(peerRef)) {
+      targets.push({
+        identity: peerRef,
+        transport: peerRef.startsWith('quic://') ? 'quic' : peerRef.startsWith('ws://') ? 'ws' : 'wss',
+        url: peerRef,
+        confidence: 1,
+        source: 'direct',
+      })
+    }
+
+    if (targets.length === 0) {
+      const parsed = normalizeIdentityRef(peerRef)
+      if (!parsed) {
+        return
+      }
+      return
+    }
+
+    for (const target of targets) {
+      if (target.transport === 'quic') {
+        await this.quicAdapter?.connectPeer(target.url)
+      } else if (target.transport === 'wss' || target.transport === 'ws') {
+        this.peerManager.connect(target.url)
+      }
+    }
+  }
+
   async getContent(key: string): Promise<Buffer | null> {
     const index = await this.contentStore.getIndex()
     const entry = index[key]
@@ -260,6 +378,21 @@ export class QDHTNode {
       pieces.push({ index: i, data: piece.toString('base64') })
     }
     return pieces
+  }
+
+  private parseRouteEvents(routes: string[]): StoredNostrEvent[] {
+    const parsed: StoredNostrEvent[] = []
+    for (const raw of routes) {
+      try {
+        const event = JSON.parse(raw) as StoredNostrEvent
+        if (event && typeof event === 'object' && event.kind === 30801) {
+          parsed.push(event)
+        }
+      } catch {
+        continue
+      }
+    }
+    return parsed
   }
 
   private sockPath(): string {
@@ -344,6 +477,27 @@ export class QDHTNode {
             reply({ pieces: data })
           })
           .catch(() => reply({ error: 'read error' }))
+        break
+      case 'search':
+        if (req.type === 'identity') {
+          this.searchIdentity(req.query, req.timeoutMs)
+            .then((route) => reply({ route }))
+            .catch(() => reply({ error: 'search error' }))
+          break
+        }
+        this.searchAnnouncements(req.query, {
+          type: req.type,
+          limit: req.limit,
+          timeoutMs: req.timeoutMs,
+          publisher: req.publisher,
+          qkey: req.qkey,
+          hash: req.hash,
+          name: req.name,
+          mime: req.mime,
+          tag: req.tag,
+        })
+          .then((response) => reply({ response }))
+          .catch(() => reply({ error: 'search error' }))
         break
     }
   }

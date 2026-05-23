@@ -5,6 +5,9 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { generateKeypair } from '../core/identity/keys.js'
+import { NostrSqliteStore } from '../core/nostr/sqlite-store.js'
+import { buildRouteAnnouncement, signRouteAnnouncement } from '../core/discovery/reachability.js'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const TSX_ARGS = ['--import', 'tsx', 'bin/qdht-node.ts']
@@ -180,5 +183,48 @@ describe('qdht-node CLI e2e', () => {
     const get = await runCli(['get', qkey, '--config', configB, '--out', outputFile])
     expect(get.code).toBe(0)
     expect(await readFile(outputFile)).toEqual(await readFile(inputFile))
+
+    const search = await runCli(['search', 'input.txt', '--config', configA, '--type', 'content'])
+    expect(search.code).toBe(0)
+    expect(search.stdout).toContain('Request : content "input.txt"')
+    expect(search.stdout).toContain('Announcements:')
+    expect(search.stdout).toContain('input.txt')
   }, 30_000)
+
+  it('searches identity routes through the daemon CLI', async () => {
+    const dirA = join(tmpRoot, 'identity')
+    const configPath = join(tmpRoot, 'identity-config.json')
+    const subject = generateKeypair()
+    const observer = generateKeypair()
+    const routeStore = new NostrSqliteStore(join(dirA, 'nostr.sqlite'))
+    const route = buildRouteAnnouncement(subject.pubkey, [
+      {
+        subjectIdentity: subject.pubkey,
+        observerIdentity: observer.pubkey,
+        observedIp: '127.0.0.1',
+        observedPort: 22222,
+        transport: 'ws',
+        observedAt: 1710000200,
+        confidence: 0.96,
+        dialbackSuccess: true,
+      },
+    ])
+    routeStore.upsert(signRouteAnnouncement(route, subject.privkey))
+    routeStore.close()
+
+    await writeFile(configPath, JSON.stringify({
+      identity: { privkey: subject.privkey },
+      peers: [],
+      port: 21910,
+      dataDir: dirA,
+    }))
+
+    await startDaemon(configPath)
+
+    const search = await runCli(['search', subject.pubkey, '--config', configPath, '--type', 'identity'])
+    expect(search.code).toBe(0)
+    expect(search.stdout).toContain(`Identity : ${subject.pubkey}`)
+    expect(search.stdout).toContain('Reachable: yes')
+    expect(search.stdout).toContain('Best     : ws://127.0.0.1:22222')
+  }, 20_000)
 })

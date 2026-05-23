@@ -109,7 +109,7 @@ describe('PeerManager', () => {
 
     const ws = new WebSocket(`ws://127.0.0.1:${p}`)
     await waitFor(() => pm!.peers().length > 0)
-    ws.close()
+    safeClose(ws)
     await waitFor(() => pm!.peers().length === 0)
     expect(pm!.peers().length).toBe(0)
   })

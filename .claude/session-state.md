@@ -1,57 +1,83 @@
-# Session State: Spam Reporting System Implementation
+# Session State: NIP-1984 Internal Reporting
 
-**Generated**: 2026-05-23 (context: 57%)  
-**Task**: Wire up automatic spam/reputation reporting in qDHT live node
+**Task**: Add NIP-1984 reporting to qDHT (propagate through peer network, not Nostr relays)
 
-## ✅ Completed
+## Design
 
-Added `buildReputationDelta()` function to `src/core/protocol/delta.ts`:
-- Builds kind 10802 events with target pubkey and delta score
-- Includes `ReputationDelta` and `ReputationDeltaContent` interfaces
+- **Kind 1984**: NIP-1984 report events
+- **Propagation**: Through qDHT peer graph (like announcements/deltas)
+- **Triggers**: Same bad-actor detection (bad signatures, bad hashes, spam)
+- **Format**: Standard NIP-1984 with tags for reason, content hash, etc.
+- **No relay requirement**: Purely peer-to-peer via sync-manager broadcast
 
-## 📋 Remaining Tasks
+## Implementation
 
-### 1. sync-manager.ts - Penalize bad signatures
-**File**: `src/node/sync-manager.ts`, method `handleAnnouncement()` (~line 139)
-- When `verifyEvent()` fails (line 143), before returning add:
-  ```typescript
-  this.reputationMap.adjust(event.pubkey, -0.1)
-  this.broadcastReputationDelta(event.pubkey, -0.1)
-  ```
-- Add helper method that creates and broadcasts reputation delta event
-
-### 2. piece-fetcher-service.ts - Penalize bad hashes  
-**File**: `src/node/piece-fetcher-service.ts`, method `fetchContent()` (~line 83)
-- When hash mismatch (line 83-85), penalize providers:
-  ```typescript
-  for (const task of selected) {
-    this.reputationMap.adjust(task.nodeId, -0.2)
-  }
-  ```
-- Also on fetch errors (line 129): penalize nodeId by -0.05
-
-### 3. sync-manager.ts - Merge received reputation deltas
-**File**: `src/node/sync-manager.ts`, method `handleDeltaResponse()` (~line 195)
-- Parse reputationDeltas array from delta response payload
-- For each delta, merge into local map via `reputationMap.merge()`
-
-### 4. sync-manager.ts - Include deltas in delta responses
-**File**: `src/node/sync-manager.ts`, method `handleDeltaRequest()` (~line 165)
-- Collect recent reputation delta events (kind 10802) from eventLog
-- Serialize and include in `reputationDeltas` array of response (line 189)
-
-## Imports Needed
+### 1. Add kind 1984 to kinds.ts
 ```typescript
-import { buildReputationDelta } from '../core/protocol/delta.js'
+export const QDHT_KIND = {
+  // ... existing
+  REPORT: 1984,  // NIP-1984 reporting
+}
 ```
 
-## Penalty Schedule
-- Bad signature: -0.1
-- Bad content hash: -0.2
-- Fetch error: -0.05
+### 2. Create report builder in protocol/
+New file: `src/core/protocol/report.ts`
+```typescript
+export interface Report {
+  kind: 1984
+  pubkey: string
+  created_at: number
+  tags: string[][]
+  content: string
+  sig: string
+}
 
-## Test Commands
-```bash
-npm run test           # all tests
-npm run sim:spam      # spam scenario
+export function buildReport(opts: {
+  pubkey: string
+  reportedPubkey: string
+  reason: 'spam' | 'invalid_content' | 'bad_hash'
+  content?: string  // optional details
+}): Report {
+  return {
+    kind: 1984,
+    pubkey: opts.pubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['p', opts.reportedPubkey],
+      ['reason', opts.reason],
+    ],
+    content: opts.content ?? '',
+    sig: '',
+  }
+}
 ```
+
+### 3. Update sync-manager
+- Import `buildReport`
+- When detecting bad signature: create and broadcast report with reason='invalid_content'
+- When detecting bad hash: create and broadcast report with reason='bad_hash'
+- Handle incoming kind 1984 reports in message router
+- Include reports in delta responses (like reputation deltas)
+- Store reports in eventLog
+
+### 4. Wire into existing penalty code
+Replace/augment the reputation delta broadcasts with:
+1. Create kind 1984 report event
+2. Broadcast it like announcements (propagates through peer graph)
+3. Still send reputation delta for local scoring
+
+## NIP-1984 Reference
+https://github.com/nostr-protocol/nips/blob/master/84.md
+- `p` tag: pubkey being reported
+- `e` tag: event id being reported (optional)
+- `reason` tag: spam | abuse | illegal | profanity | etc
+- content: explanation
+
+For qDHT:
+- reason: 'spam' | 'invalid_content' | 'bad_hash'
+- tags: [['p', reportedPubkey], ['reason', reason]]
+
+## Testing
+- Unit test: buildReport creates valid events
+- Integration: nodes exchange reports and see them in eventLog
+- Spam scenario: verify reports are generated and propagated
