@@ -1,59 +1,73 @@
 # Session State Checkpoint
-Generated: 2026-05-23
+Generated: 2026-05-23 (Emergency Context Clear)
+Reason: Context threshold exceeded (95%+)
 
 ## Execution Mode
 Mode: unattended
 Auto-Continue: true
 
 ## Current Task
-Write Phase 5 (Content Providers) implementation plan based on the approved spec.
+Write Phase 5 (Content Providers) implementation plan to docs/superpowers/plans/2026-05-23-content-providers.md
 
-## Progress Summary
-- Phase 1 (Simulation Library): spec + plan written and committed ✓
-- Phase 2 (Nostr Event Layer): spec + plan written and committed ✓
-- Phase 3 (Live Node): spec + plan written and committed ✓
-- Phase 4 (Relay Adapter): spec + plan written and committed ✓
-- Phase 5 (Content Providers):
-  - Brainstorming complete (Q1-Q4 answered, approaches proposed)
-  - All 6 design sections approved by user ✓
-  - Spec written to docs/superpowers/specs/2026-05-23-content-providers-design.md and committed ✓
-  - NOW: Writing implementation plan
+## Progress So Far
+✓ Saved session state with execution mode
+✓ Committed checkpoint
+✓ Read spec from docs/superpowers/specs/2026-05-23-content-providers-design.md
+→ NOW: About to invoke superpowers:writing-plans skill
+
+## Spec Summary (from design doc)
+- Section 1: ContentProvider interface (PieceDescriptor, ContentProvider, ContentMeta, ContentLocation)
+- Section 2: HttpProvider (Node.js fetch + Range headers, no new deps)
+- Section 3: Nip96Provider (upload-only via multipart POST)
+- Section 4: ContentProviderRegistry (ordered provider routing)
+- Section 5: PieceFetcherService (parallel fetch, rare-first, automatic fallback, integrity verification)
+- Section 6: Integration with QDHTNode.start() and get command
 
 ## Remaining Work
-1. Write implementation plan to docs/superpowers/plans/2026-05-23-content-providers.md
-   - Use writing-plans skill
-   - Cover: ContentProvider interface, HttpProvider, Nip96Provider, ContentProviderRegistry, PieceFetcherService, QDHTNode wiring, get command
-   - Use TDD throughout
+1. Invoke superpowers:writing-plans skill
+2. Write comprehensive TDD implementation plan with:
    - Bite-sized tasks (2-5 min each)
-   - Include exact file paths, complete code, exact commands with expected output
+   - Exact file paths for each task
+   - Complete code in each step
+   - Exact commands with expected output
    - Frequent commits
-2. Git commit the plan
-3. Offer execution options (Subagent-Driven vs Inline)
+3. Save to docs/superpowers/plans/2026-05-23-content-providers.md
+4. Git commit with message: "docs: Phase 5 content providers implementation plan"
+5. Offer execution options
 
-## Key Decisions (Phase 5)
-- HTTP provider: streaming via Node.js fetch + Range headers (no new deps)
-- NIP-96 scope: upload-only (download uses HttpProvider)
+## Key Design Decisions (from spec)
+- HTTP provider: streaming via Node.js fetch + Range headers
+- NIP-96 scope: upload-only (download via HttpProvider)
 - Piece fetcher: standalone service in src/node/
-- Fallback policy: automatic
-- Architecture: ContentProviderRegistry + pluggable providers
+- Fallback: automatic
+- Registry: ordered provider list
 
 ## Active Files
-- docs/superpowers/specs/2026-05-23-content-providers-design.md (written, committed)
-- docs/superpowers/plans/2026-05-23-content-providers.md (to be written NOW)
+- docs/superpowers/specs/2026-05-23-content-providers-design.md ✓ (read)
+- docs/superpowers/plans/2026-05-23-content-providers.md (to be written)
 
-## Continuation Instructions
-1. Invoke superpowers:writing-plans skill to write plan
-2. Read spec at docs/superpowers/specs/2026-05-23-content-providers-design.md
-3. Create detailed TDD implementation plan with bite-sized tasks (2-5 min each):
-   - ContentProvider interface types (provider.ts)
-   - HttpProvider with streaming + Range headers + tests
-   - Nip96Provider upload-only + tests
-   - ContentProviderRegistry + tests
-   - PieceFetcherService parallel fetch with fallback + tests
-   - QDHTNode wiring (start() additions)
-   - Updated get command (local check first, progress events, timeout)
-4. Save to docs/superpowers/plans/2026-05-23-content-providers.md
-5. Git commit: "docs: Phase 5 content providers implementation plan"
-6. Offer execution options: "Plan complete. Two execution options: 1. Subagent-Driven (recommended) 2. Inline Execution"
+## Next Immediate Step
+Call superpowers:writing-plans skill with the following prompt:
 
-Do NOT pause for confirmation - this is unattended mode with auto_continue: true.
+"Write implementation plan for Phase 5 Content Providers. Use the spec at docs/superpowers/specs/2026-05-23-content-providers-design.md.
+
+Create detailed TDD implementation plan with bite-sized tasks (2-5 min each):
+1. ContentProvider interface types (src/core/content/provider.ts)
+2. HttpProvider implementation + tests
+3. Nip96Provider upload + tests
+4. ContentProviderRegistry + tests
+5. PieceFetcherService + tests
+6. QDHTNode wiring in start()
+7. Updated get command
+
+Each task must include:
+- Exact file paths
+- Complete code listings
+- Exact test commands with expected output
+- Git commit message
+
+Save to: docs/superpowers/plans/2026-05-23-content-providers.md"
+
+Then commit and offer execution options.
+
+NO PAUSES. Auto-continue mode.
