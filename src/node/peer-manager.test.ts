@@ -18,6 +18,16 @@ async function waitFor(fn: () => boolean, timeoutMs = 2000): Promise<void> {
   }
 }
 
+function safeClose(ws: WebSocket): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    try {
+      ws.close()
+    } catch {
+      // ignore teardown races in tests
+    }
+  }
+}
+
 describe('PeerManager', () => {
   let pm: PeerManager | undefined
 
@@ -34,7 +44,7 @@ describe('PeerManager', () => {
     const ws = new WebSocket(`ws://127.0.0.1:${p}`)
     await waitFor(() => pm!.peers().length > 0)
     expect(pm!.peers().length).toBe(1)
-    ws.close()
+    safeClose(ws)
   })
 
   it('reports pubkey from handshake in peers()', async () => {
@@ -50,7 +60,7 @@ describe('PeerManager', () => {
 
     await waitFor(() => pm!.peers().some((peer) => peer.pubkey === peerPubkey))
     expect(pm!.peers().find((peer) => peer.pubkey === peerPubkey)).toBeDefined()
-    ws.close()
+    safeClose(ws)
   })
 
   it('calls transport-compatible peer connected handlers on handshake', async () => {
@@ -71,7 +81,7 @@ describe('PeerManager', () => {
 
     await waitFor(() => seen.includes(peerPubkey))
     expect(seen).toContain(peerPubkey)
-    ws.close()
+    safeClose(ws)
   })
 
   it('calls onMessage handler when a peer sends a message', async () => {
@@ -89,7 +99,7 @@ describe('PeerManager', () => {
 
     await waitFor(() => received.length > 0)
     expect(received[0]).toMatchObject({ kind: 10800 })
-    ws.close()
+    safeClose(ws)
   })
 
   it('removes peer from peers() when connection closes', async () => {

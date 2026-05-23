@@ -97,8 +97,9 @@ program
   .description('Store a file and announce it to the network')
   .option('--config <path>', 'Config file path', DEFAULT_CONFIG_PATH)
   .option('--ttl <seconds>', 'TTL in seconds', (value) => Number(value), 86400)
+  .option('--linger <ms>', 'Keep the process alive after announcing', (value) => Number(value), 0)
   .option('--data-dir <dir>', 'Override data directory')
-  .action(async (file: string, opts: { config: string; ttl: number; dataDir?: string }) => {
+  .action(async (file: string, opts: { config: string; ttl: number; linger: number; dataDir?: string }) => {
     const config = await loadNodeConfig(opts.config, { dataDir: opts.dataDir })
     const node = new QDHTNode(config)
     await node.start()
@@ -107,6 +108,13 @@ program
     const name = file.split('/').pop()
     const loc = await node.put(data, { name, ttl: opts.ttl })
     console.log(loc.qkey)
+
+    if (opts.linger > 0) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, opts.linger)
+      })
+    }
+
     await node.stop()
   })
 

@@ -1,5 +1,5 @@
 import { isSignedEvent, type SignedNostrEvent } from '../core/nostr/event.js'
-import { verifyEvent, signAnnouncement } from '../core/identity/signing.js'
+import { verifyEvent, signAnnouncement, signEvent } from '../core/identity/signing.js'
 import { NeighbourStateMap } from '../core/neighbour-state.js'
 import { Propagator } from '../core/propagation/propagator.js'
 import { buildAnnouncement, isValidAnnouncement } from '../core/protocol/announcement.js'
@@ -244,7 +244,7 @@ export class SyncManager {
       targetPubkey,
       delta,
     })
-    const signed = signAnnouncement(event, this.opts.privkey)
+    const signed = signEvent(event, this.opts.privkey)
     const id = signed.id ?? `${signed.pubkey}-${signed.created_at}`
     this.eventLog.set(id, signed)
     this.broadcast(signed)

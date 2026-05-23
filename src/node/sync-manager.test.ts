@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GraphState } from '../core/graph/graph-state.js'
 import { Propagator } from '../core/propagation/propagator.js'
 import { NeighbourStateMap } from '../core/neighbour-state.js'
+import { ReputationMap } from '../core/protocol/reputation.js'
 import { signAnnouncement } from '../core/identity/signing.js'
 import { generateKeypair } from '../core/identity/keys.js'
 import { buildAnnouncement } from '../core/protocol/announcement.js'
@@ -58,11 +59,13 @@ function makeDeps() {
   const propagator = new Propagator(graph, graph.getIndex('local'), 0.5)
   const neighbourState = new NeighbourStateMap()
   const transport = makeMockTransport()
+  const reputationMap = new ReputationMap()
   const sm = new SyncManager({
     pubkey: 'a'.repeat(64),
     privkey: 'a'.repeat(64),
     propagator,
     neighbourState,
+    reputationMap,
     transports: [transport],
   })
   return { sm, transport, neighbourState }
@@ -136,6 +139,7 @@ describe('SyncManager', () => {
       privkey: 'a'.repeat(64),
       propagator: new Propagator(graph, graph.getIndex('local'), 0.5),
       neighbourState: new NeighbourStateMap(),
+      reputationMap: new ReputationMap(),
       transports: [t1, t2],
     })
 
@@ -156,6 +160,7 @@ describe('SyncManager', () => {
       privkey: 'a'.repeat(64),
       propagator: new Propagator(graph, graph.getIndex('local'), 0.5),
       neighbourState: new NeighbourStateMap(),
+      reputationMap: new ReputationMap(),
       transports: [t1, t2],
     })
 

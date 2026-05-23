@@ -102,6 +102,7 @@ export class QDHTNode {
       privkey: this.kp.privkey,
       propagator: this.propagator,
       neighbourState: this.neighbourState,
+      reputationMap: this.reputationMap,
       transports,
     })
 

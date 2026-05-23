@@ -9,6 +9,7 @@
     "node:start": "tsx bin/qdht-node.ts start",
     "test": "vitest run",
     "test:watch": "vitest",
+    "stress:quic": "tsx src/node/quic-stress.ts",
     "sim:stable": "tsx src/sim/scenarios/stable.ts",
     "sim:churn": "tsx src/sim/scenarios/churn.ts",
     "sim:spam": "tsx src/sim/scenarios/spam.ts",
