@@ -6,7 +6,7 @@ import { buildAnnouncement, isValidAnnouncement } from '../core/protocol/announc
 import { buildDeltaRequest, buildDeltaResponse, buildReputationDelta } from '../core/protocol/delta.js'
 import { buildRequestAnnouncement, buildRequestResponse, isValidRequestAnnouncement, isValidRequestResponse, parseRequestAnnouncement, parseRequestResponse, type QDHTRequestPayload, type QDHTRequestResponsePayload } from '../core/protocol/request.js'
 import { getTag } from '../core/nostr/tags.js'
-import { NostrSqliteStore, type StoredNostrEvent } from '../core/nostr/sqlite-store.js'
+import { type NostrEventRepository, type StoredNostrEvent } from '../core/storage/event-repository.js'
 import { ReputationMap } from '../core/protocol/reputation.js'
 import { REACHABILITY_KIND, normalizeIdentityRef, parseObservedAddressEvent, parseRouteAnnouncement, signRouteAnnouncement, type RouteAnnouncement } from '../core/discovery/reachability.js'
 import type { Transport } from './transport.js'
@@ -17,7 +17,8 @@ export interface SyncManagerOptions {
   propagator: Propagator
   neighbourState: NeighbourStateMap
   reputationMap: ReputationMap
-  eventStorePath: string
+  eventStore: NostrEventRepository
+  ownsEventStore?: boolean
   transports: Transport[]
 }
 
@@ -35,11 +36,13 @@ export class SyncManager {
   private eventLog = new Map<string, AnyEvent>()
   private peerLastSeen = new Map<string, number>()
   private requestResponses = new Map<string, QDHTRequestResponsePayload>()
-  private readonly eventStore: NostrSqliteStore
+  private readonly eventStore: NostrEventRepository
+  private readonly ownsEventStore: boolean
   private closed = false
 
   constructor(private opts: SyncManagerOptions) {
-    this.eventStore = new NostrSqliteStore(this.opts.eventStorePath)
+    this.eventStore = this.opts.eventStore
+    this.ownsEventStore = this.opts.ownsEventStore ?? false
     this.hydrateEventStore()
     for (const transport of this.opts.transports) {
       transport.onMessage((msg, peerId) => this.handleMessage(msg, peerId))
@@ -53,7 +56,9 @@ export class SyncManager {
       return
     }
     this.closed = true
-    this.eventStore.close()
+    if (this.ownsEventStore) {
+      this.eventStore.close()
+    }
   }
 
   handleMessage(msg: unknown, fromPeerId: string): void {

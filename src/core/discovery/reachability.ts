@@ -1,6 +1,7 @@
 import { nip19 } from 'nostr-tools'
 import { type SignedNostrEvent } from '../nostr/event.js'
-import { type StoredNostrEvent, NostrSqliteStore } from '../nostr/sqlite-store.js'
+import { type NostrEventRepository, type StoredNostrEvent } from '../storage/event-repository.js'
+import { NostrSqliteStore } from '../nostr/sqlite-store.js'
 import { signEvent, verifyEvent } from '../identity/signing.js'
 
 export const REACHABILITY_KIND = {
@@ -59,9 +60,7 @@ export interface ResolvedPeerTarget {
   source: 'direct' | 'route'
 }
 
-export interface RouteStore {
-  loadAll(): StoredNostrEvent[]
-}
+export interface RouteStore extends Pick<NostrEventRepository, 'loadAll' | 'close'> {}
 
 export interface PublishObservedAddressInput {
   subjectIdentity: string
@@ -372,14 +371,23 @@ export function routeAnnouncementToDialTargets(route: ResolvedRoute): ResolvedPe
 }
 
 export class ReachabilityDirectory {
-  private readonly store: NostrSqliteStore
+  private readonly store: RouteStore
+  private readonly ownsStore: boolean
 
-  constructor(dbPath: string) {
-    this.store = new NostrSqliteStore(dbPath)
+  constructor(storeOrDbPath: string | RouteStore) {
+    if (typeof storeOrDbPath === 'string') {
+      this.store = new NostrSqliteStore(storeOrDbPath)
+      this.ownsStore = true
+    } else {
+      this.store = storeOrDbPath
+      this.ownsStore = false
+    }
   }
 
   close(): void {
-    this.store.close()
+    if (this.ownsStore) {
+      this.store.close()
+    }
   }
 
   resolve(identityRef: string): ResolvedRoute | null {

@@ -8,6 +8,7 @@ import type { QDHTConfig } from './config.js'
 import { generateKeypair } from '../core/identity/keys.js'
 import { NostrSqliteStore } from '../core/nostr/sqlite-store.js'
 import { buildRouteAnnouncement, signRouteAnnouncement } from '../core/discovery/reachability.js'
+import { MemoryNodeStorage } from '../core/storage/memory-node-storage.js'
 
 let tmpDir = ''
 let node: QDHTNode | undefined
@@ -113,7 +114,7 @@ describe('QDHTNode', () => {
   it('searches local route announcements by identity', async () => {
     const subject = generateKeypair()
     const observer = generateKeypair()
-    const dbPath = join(tmpDir, 'nostr.sqlite')
+    const dbPath = join(tmpDir, 'qdht.sqlite')
     const store = new NostrSqliteStore(dbPath)
     const route = buildRouteAnnouncement(subject.pubkey, [
       {
@@ -176,5 +177,26 @@ describe('QDHTNode', () => {
       kind: 10800,
       pubkey: node!.pubkey(),
     })
+  })
+
+  it('can run on injected memory storage', async () => {
+    const storage = new MemoryNodeStorage()
+    const keypair = generateKeypair()
+    const config: QDHTConfig = {
+      identity: { privkey: keypair.privkey },
+      peers: [],
+      port: 19905,
+      dataDir: tmpDir,
+    }
+    node = new QDHTNode(config, storage)
+    await node.start()
+
+    const original = Buffer.from('memory-backed qdht content')
+    const loc = await node.put(original, { name: 'memory.txt', ttl: 3600 })
+    const fetched = await node.fetchContent(loc.qkey)
+
+    expect(fetched.equals(original)).toBe(true)
+    await node.stop()
+    node = undefined
   })
 })

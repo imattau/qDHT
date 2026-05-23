@@ -196,7 +196,7 @@ describe('qdht-node CLI e2e', () => {
     const configPath = join(tmpRoot, 'identity-config.json')
     const subject = generateKeypair()
     const observer = generateKeypair()
-    const routeStore = new NostrSqliteStore(join(dirA, 'nostr.sqlite'))
+    const routeStore = new NostrSqliteStore(join(dirA, 'qdht.sqlite'))
     const route = buildRouteAnnouncement(subject.pubkey, [
       {
         subjectIdentity: subject.pubkey,

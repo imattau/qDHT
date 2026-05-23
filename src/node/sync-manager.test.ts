@@ -12,6 +12,7 @@ import { buildAnnouncement } from '../core/protocol/announcement.js'
 import { buildRequestAnnouncement } from '../core/protocol/request.js'
 import { buildRouteAnnouncement } from '../core/discovery/reachability.js'
 import { signRouteAnnouncement } from '../core/discovery/reachability.js'
+import { NostrSqliteStore } from '../core/nostr/sqlite-store.js'
 import { SyncManager } from './sync-manager.js'
 import type { Transport } from './transport.js'
 
@@ -60,9 +61,12 @@ function makeMockTransport(): Transport & {
 }
 
 let tmpRoot = ''
+const openStores: NostrSqliteStore[] = []
 
 function makeDeps() {
-  const eventStorePath = join(tmpRoot, 'nostr.sqlite')
+  const eventStorePath = join(tmpRoot, 'qdht.sqlite')
+  const eventStore = new NostrSqliteStore(eventStorePath)
+  openStores.push(eventStore)
   const graph = new GraphState()
   graph.addNode('local')
   const propagator = new Propagator(graph, graph.getIndex('local'), 0.5)
@@ -75,10 +79,10 @@ function makeDeps() {
     propagator,
     neighbourState,
     reputationMap,
-    eventStorePath,
+    eventStore,
     transports: [transport],
   })
-  return { sm, transport, neighbourState, reputationMap, eventStorePath }
+  return { sm, transport, neighbourState, reputationMap, eventStore, eventStorePath }
 }
 
 describe('SyncManager', () => {
@@ -87,6 +91,9 @@ describe('SyncManager', () => {
   })
 
   afterEach(async () => {
+    while (openStores.length > 0) {
+      openStores.pop()?.close()
+    }
     await rm(tmpRoot, { recursive: true, force: true })
   })
 
@@ -254,6 +261,7 @@ describe('SyncManager', () => {
   it('sendDeltaRequest sends kind 20800 to a peer through every transport', () => {
     const t1 = makeMockTransport()
     const t2 = makeMockTransport()
+    const eventStore = new NostrSqliteStore(join(tmpRoot, 'delta-request.sqlite'))
     const graph = new GraphState()
     graph.addNode('local')
     const sm = new SyncManager({
@@ -262,7 +270,7 @@ describe('SyncManager', () => {
       propagator: new Propagator(graph, graph.getIndex('local'), 0.5),
       neighbourState: new NeighbourStateMap(),
       reputationMap: new ReputationMap(),
-      eventStorePath: join(tmpRoot, 'delta-request.sqlite'),
+      eventStore,
       transports: [t1, t2],
     })
 
@@ -271,11 +279,14 @@ describe('SyncManager', () => {
     expect(t2.sends).toHaveLength(1)
     expect(t1.sends[0]!.msg).toMatchObject({ kind: 20800 })
     expect(t2.sends[0]!.msg).toMatchObject({ kind: 20800 })
+    sm.close()
+    eventStore.close()
   })
 
   it('publishes announcements through every transport', () => {
     const t1 = makeMockTransport()
     const t2 = makeMockTransport()
+    const eventStore = new NostrSqliteStore(join(tmpRoot, 'publish.sqlite'))
     const graph = new GraphState()
     graph.addNode('local')
     const sm = new SyncManager({
@@ -284,7 +295,7 @@ describe('SyncManager', () => {
       propagator: new Propagator(graph, graph.getIndex('local'), 0.5),
       neighbourState: new NeighbourStateMap(),
       reputationMap: new ReputationMap(),
-      eventStorePath: join(tmpRoot, 'publish.sqlite'),
+      eventStore,
       transports: [t1, t2],
     })
 
@@ -299,6 +310,8 @@ describe('SyncManager', () => {
 
     expect(t1.broadcasts.length).toBeGreaterThan(0)
     expect(t2.broadcasts.length).toBeGreaterThan(0)
+    sm.close()
+    eventStore.close()
   })
 
   it('sends a delta request when a transport reports a peer connection', () => {
@@ -330,13 +343,14 @@ describe('SyncManager', () => {
 
     const graph = new GraphState()
     graph.addNode('local')
+    const reloadedStore = new NostrSqliteStore(eventStorePath)
     const reloaded = new SyncManager({
       pubkey: 'a'.repeat(64),
       privkey: 'a'.repeat(64),
       propagator: new Propagator(graph, graph.getIndex('local'), 0.5),
       neighbourState: new NeighbourStateMap(),
       reputationMap: new ReputationMap(),
-      eventStorePath,
+      eventStore: reloadedStore,
       transports: [makeMockTransport()],
     })
 
@@ -346,5 +360,6 @@ describe('SyncManager', () => {
       pieceSize: 123,
     })
     reloaded.close()
+    reloadedStore.close()
   })
 })

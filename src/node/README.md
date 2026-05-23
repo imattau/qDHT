@@ -15,6 +15,8 @@ The live qDHT node runtime.
 - `transport.ts` defines the transport interface
 - `quic-stress.ts` runs a live QUIC stress harness
 
+The live node stores its SQLite-backed index and event history in a single `qdht.sqlite` file under `dataDir`.
+
 ## CLI
 
 The CLI entrypoint is [`bin/qdht-node.ts`](../../bin/qdht-node.ts).

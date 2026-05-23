@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { SqliteConnection } from '../core/sqlite/sqlite-connection.js'
 import { ContentStore } from './content-store.js'
 
 let tmpDir = ''
@@ -13,6 +15,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  store.close()
   await rm(tmpDir, { recursive: true, force: true })
 })
 
@@ -77,7 +80,14 @@ describe('ContentStore index', () => {
   it('persists index across instances', async () => {
     const data = Buffer.from('persist test')
     const loc = await store.put(data, { name: 'persist.txt', ttl: 3600 })
+    const db = new SqliteConnection(join(tmpDir, 'qdht.sqlite'))
+    const pieceRows = db.prepare('SELECT COUNT(*) AS count FROM content_piece_hashes WHERE qkey = ?').get(loc.qkey) as { count: number }
+    db.close()
     const store2 = new ContentStore(tmpDir)
     expect(await store2.hasPiece(loc.hash, 0)).toBe(true)
+    expect(pieceRows.count).toBe(loc.totalPieces)
+    expect(existsSync(join(tmpDir, 'qdht.sqlite'))).toBe(true)
+    expect(existsSync(join(tmpDir, 'index.json'))).toBe(false)
+    store2.close()
   })
 })

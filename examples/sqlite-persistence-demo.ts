@@ -16,7 +16,7 @@ try {
     ttl: 3600,
   })
 
-  const eventDb = join(first.dir, 'nostr.sqlite')
+  const eventDb = join(first.dir, 'qdht.sqlite')
   await first.node.stop()
   handles.pop()
 

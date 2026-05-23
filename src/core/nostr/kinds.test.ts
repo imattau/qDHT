@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { QDHT_KIND, isQDHTKind } from './kinds.js'
+import { QDHT_KIND, NOSTR_KIND_ROWS, QDHT_KIND_ROWS, isQDHTKind } from './kinds.js'
 
 describe('QDHT_KIND', () => {
   it('has the expected numeric values', () => {
@@ -31,5 +31,37 @@ describe('isQDHTKind', () => {
     expect(isQDHTKind(1)).toBe(false)
     expect(isQDHTKind(10799)).toBe(false)
     expect(isQDHTKind(99999)).toBe(false)
+  })
+})
+
+describe('QDHT_KIND_ROWS', () => {
+  it('includes metadata for each known kind', () => {
+    expect(QDHT_KIND_ROWS).toHaveLength(8)
+    expect(QDHT_KIND_ROWS.find((row) => row.kind_id === QDHT_KIND.ANNOUNCEMENT)).toMatchObject({
+      name: 'announcement',
+      category: 'content',
+      searchable: 1,
+    })
+    expect(QDHT_KIND_ROWS.find((row) => row.kind_id === QDHT_KIND.REQUEST_ANNOUNCEMENT)).toMatchObject({
+      name: 'request_announcement',
+      category: 'request',
+      searchable: 1,
+    })
+  })
+})
+
+describe('NOSTR_KIND_ROWS', () => {
+  it('includes routing kinds used by the live node', () => {
+    expect(NOSTR_KIND_ROWS).toHaveLength(10)
+    expect(NOSTR_KIND_ROWS.find((row) => row.kind_id === 30800)).toMatchObject({
+      name: 'observed_address',
+      category: 'routing',
+      searchable: 1,
+    })
+    expect(NOSTR_KIND_ROWS.find((row) => row.kind_id === 30801)).toMatchObject({
+      name: 'route_announcement',
+      category: 'routing',
+      searchable: 1,
+    })
   })
 })

@@ -27,7 +27,7 @@ afterEach(async () => {
 describe('reachability routing', () => {
   it('builds signed route announcements and resolves them from sqlite', async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'qdht-reachability-'))
-    const dbPath = join(tmpRoot, 'nostr.sqlite')
+    const dbPath = join(tmpRoot, 'qdht.sqlite')
     const store = new NostrSqliteStore(dbPath)
 
     const subject = generateKeypair()
@@ -65,7 +65,7 @@ describe('reachability routing', () => {
     const signedRoute = signRouteAnnouncement(route, subject.privkey)
     store.upsert(signedRoute)
 
-    const resolver = new ReachabilityDirectory(dbPath)
+    const resolver = new ReachabilityDirectory(store)
     const npub = npubEncode(subject.pubkey)
     const resolved = resolver.resolve(npub)
     const targets = resolver.resolvePeerTargets(`nostr://${npub}`)
@@ -85,9 +85,120 @@ describe('reachability routing', () => {
     store.close()
   })
 
+  it.each([
+    {
+      name: 'stable-public',
+      reports: [
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'b'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 51820,
+          transport: 'quic',
+          observedAt: 1710000000,
+          confidence: 0.9,
+          dialbackSuccess: true,
+        },
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'c'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 51820,
+          transport: 'quic',
+          observedAt: 1710000001,
+          confidence: 0.8,
+          dialbackSuccess: true,
+        },
+      ],
+      expectedNat: 'stable-public',
+    },
+    {
+      name: 'port-changing',
+      reports: [
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'b'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 51820,
+          transport: 'quic',
+          observedAt: 1710000000,
+          confidence: 0.9,
+          dialbackSuccess: true,
+        },
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'c'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 60433,
+          transport: 'quic',
+          observedAt: 1710000001,
+          confidence: 0.8,
+          dialbackSuccess: true,
+        },
+      ],
+      expectedNat: 'port-changing',
+    },
+    {
+      name: 'cgnat',
+      reports: [
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'b'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 51820,
+          transport: 'quic',
+          observedAt: 1710000000,
+          confidence: 0.9,
+          dialbackSuccess: true,
+        },
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'c'.repeat(64),
+          observedIp: '198.51.100.9',
+          observedPort: 62000,
+          transport: 'quic',
+          observedAt: 1710000001,
+          confidence: 0.8,
+          dialbackSuccess: true,
+        },
+      ],
+      expectedNat: 'cgnat',
+    },
+    {
+      name: 'symmetric-nat',
+      reports: [
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'b'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 51820,
+          transport: 'quic',
+          observedAt: 1710000000,
+          confidence: 0.9,
+          dialbackSuccess: false,
+        },
+        {
+          subjectIdentity: 'a'.repeat(64),
+          observerIdentity: 'c'.repeat(64),
+          observedIp: '203.0.113.44',
+          observedPort: 60433,
+          transport: 'quic',
+          observedAt: 1710000001,
+          confidence: 0.8,
+          dialbackSuccess: false,
+        },
+      ],
+      expectedNat: 'symmetric-nat',
+    },
+  ])('classifies NAT as $expectedNat for $name', ({ reports, expectedNat }) => {
+    const subject = 'a'.repeat(64)
+    const route = buildRouteAnnouncement(subject, reports)
+    expect(route.nat.typeEstimate).toBe(expectedNat)
+  })
+
   it('resolves direct transport urls without route records', () => {
     const tmp = join(tmpdir(), `qdht-reachability-${Date.now()}`)
-    const resolver = new ReachabilityDirectory(join(tmp, 'nostr.sqlite'))
+    const resolver = new ReachabilityDirectory(join(tmp, 'qdht.sqlite'))
     expect(resolver.resolvePeerTargets('ws://127.0.0.1:1234')).toEqual([
       {
         identity: 'ws://127.0.0.1:1234',

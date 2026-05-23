@@ -11,14 +11,16 @@ import { ReputationMap } from '../core/protocol/reputation.js'
 import { ReplicaStore } from '../core/content/replica-store.js'
 import { Nip96Provider } from '../core/content/nip96-provider.js'
 import { Propagator } from '../core/propagation/propagator.js'
-import { ContentStore, type ContentLocation, type PutMeta } from './content-store.js'
+import { type ContentIndexRepository, type ContentLocation, type PutMeta } from '../core/storage/content-repository.js'
 import type { QDHTConfig } from './config.js'
 import { PeerManager } from './peer-manager.js'
 import { RelayAdapter } from './relay-adapter.js'
 import { QuicAdapter } from './quic-adapter.js'
 import { SyncManager } from './sync-manager.js'
 import type { QDHTRequestPayload, QDHTRequestResponsePayload } from '../core/protocol/request.js'
-import type { StoredNostrEvent } from '../core/nostr/sqlite-store.js'
+import type { NodeStorage } from '../core/storage/node-storage.js'
+import { SqliteNodeStorage } from '../core/storage/sqlite-node-storage.js'
+import type { StoredNostrEvent } from '../core/storage/event-repository.js'
 import type { Transport } from './transport.js'
 
 type RpcRequest =
@@ -75,7 +77,7 @@ export interface SearchAnnouncementsOptions {
 export class QDHTNode {
   private peerManager: PeerManager
   private syncManager: SyncManager
-  private contentStore: ContentStore
+  private contentStore: ContentIndexRepository
   public readonly fetcher: PieceFetcherService
   private providerRegistry: ContentProviderRegistry
   private replicaStore: ReplicaStore
@@ -87,20 +89,22 @@ export class QDHTNode {
   private graph: GraphState
   private propagator: Propagator
   private neighbourState: NeighbourStateMap
+  private readonly storage: NodeStorage
   private kp: { pubkey: string; privkey: string }
   private started = false
   private fetchNetworkConnected = false
 
-  constructor(private config: QDHTConfig) {
+  constructor(private config: QDHTConfig, storage?: NodeStorage) {
     this.kp = keypairFromHex(config.identity.privkey)
     this.graph = new GraphState()
     this.graph.addNode(this.kp.pubkey)
     this.propagator = new Propagator(this.graph, this.graph.getIndex(this.kp.pubkey), 0.5)
     this.neighbourState = new NeighbourStateMap()
-    this.contentStore = new ContentStore(config.dataDir)
     this.replicaStore = new ReplicaStore()
     this.reputationMap = new ReputationMap()
     this.providerRegistry = new ContentProviderRegistry()
+    this.storage = storage ?? new SqliteNodeStorage(config.dataDir)
+    this.contentStore = this.storage.content
 
     if (config.nip96Servers) {
       for (const serverUrl of config.nip96Servers) {
@@ -108,7 +112,7 @@ export class QDHTNode {
       }
     }
 
-    this.discoveryDirectory = new ReachabilityDirectory(join(config.dataDir, 'nostr.sqlite'))
+    this.discoveryDirectory = new ReachabilityDirectory(this.storage.events)
 
     this.peerManager = new PeerManager({
       port: config.port,
@@ -141,7 +145,7 @@ export class QDHTNode {
       propagator: this.propagator,
       neighbourState: this.neighbourState,
       reputationMap: this.reputationMap,
-      eventStorePath: join(config.dataDir, 'nostr.sqlite'),
+      eventStore: this.storage.events,
       transports,
     })
 
@@ -166,6 +170,7 @@ export class QDHTNode {
 
   async stop(): Promise<void> {
     await this.disconnect()
+    this.storage.close()
     this.syncManager.close()
     this.discoveryDirectory.close()
     if (this.rpcServer) {
@@ -458,7 +463,7 @@ export class QDHTNode {
               replicas.push({
                 pubkey,
                 lastSeen: new Date(neighbour.lastSeen * 1000).toISOString(),
-                pieceCount: neighbour.pieceRanges.reduce((sum, [start, end]) => sum + (end - start + 1), 0),
+              pieceCount: neighbour.pieceRanges.reduce((sum: number, [start, end]: [number, number]) => sum + (end - start + 1), 0),
                 totalPieces,
               })
             }

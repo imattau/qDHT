@@ -122,7 +122,7 @@ The repo currently includes:
 
 - simulation coverage for stable, churn, spam, swarming, and baseline cases
 - a live node with CLI, WebSocket, relay, and QUIC transports
-- SQLite-backed Nostr event persistence
+- a shared `qdht.sqlite` file for content indexing and Nostr event persistence
 - content-provider and reachability examples
 - benchmark and stress harnesses
 

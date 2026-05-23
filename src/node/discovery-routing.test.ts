@@ -47,7 +47,7 @@ describe('discovery routing', () => {
       dataDir: dirA,
     }
 
-    const routeStore = new NostrSqliteStore(join(dirB, 'nostr.sqlite'))
+    const routeStore = new NostrSqliteStore(join(dirB, 'qdht.sqlite'))
     const route = buildRouteAnnouncement(keyA.pubkey, [
       {
         subjectIdentity: keyA.pubkey,

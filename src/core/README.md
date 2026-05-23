@@ -13,6 +13,8 @@ This folder contains the pieces that are shared by the simulation layer and the 
 - [`nostr`](nostr/README.md) for Nostr event shapes, kinds, filters, tags, and SQLite persistence
 - [`propagation`](propagation/README.md) for spread/routing heuristics
 - [`protocol`](protocol/README.md) for announcement, delta, replica, request, and reputation types
+- [`storage`](storage/README.md) for backend-neutral content/event repository contracts
+- [`sqlite`](sqlite/README.md) for the shared low-level SQLite connection helper
 
 ## Role in the system
 
