@@ -4,6 +4,21 @@ qDHT is a Nostr-shaped distributed hash table for identity discovery, route disc
 
 It is not trying to be a generic key/value DHT. The design is centered on signed announcements, metadata search, route reflection, and content pointers rather than raw distributed storage of arbitrary records.
 
+## Quantum-Inspired Mechanics
+
+The "quantum" part of qDHT is a propagation model, not quantum hardware.
+
+In the simulation layer, information spreads across a graph using amplitude-like weights instead of a simple flood or hop-count walk. That gives the model a few useful behaviors:
+
+- nearby nodes receive stronger signal than distant nodes
+- unpopular or low-reputation paths are damped
+- a node can keep a small exploration floor so new paths are still tried
+- propagation can be tuned for thresholded spread instead of all-or-nothing broadcast
+
+In practical terms, this is a way to model selective diffusion across a network graph. It is inspired by wave behavior, but it runs as ordinary deterministic software.
+
+The same idea shows up in the simulator and the propagator, not as a claim that qDHT itself is physically quantum.
+
 It is organized around a few bounded layers:
 
 - `src/core` for protocol, identity, graph, discovery, and content primitives
