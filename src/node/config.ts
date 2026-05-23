@@ -6,6 +6,7 @@ export interface QDHTConfig {
   identity: { privkey: string }
   peers: string[]
   relays?: string[]
+  nip96Servers?: string[]
   port: number
   dataDir: string
 }
@@ -14,6 +15,7 @@ export interface ConfigOverrides {
   port?: number
   peers?: string[]
   relays?: string[]
+  nip96Servers?: string[]
   dataDir?: string
 }
 
@@ -48,6 +50,11 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     throw new Error('Config relays must be an array of strings')
   }
 
+  const nip96Servers = candidate.nip96Servers
+  if (nip96Servers !== undefined && (!Array.isArray(nip96Servers) || !nip96Servers.every((server) => typeof server === 'string'))) {
+    throw new Error('Config nip96Servers must be an array of strings')
+  }
+
   const port = candidate.port
   if (typeof port !== 'number' || !Number.isFinite(port)) {
     throw new Error('Config missing port')
@@ -62,6 +69,7 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     identity: { privkey: validatePrivkey((identity as Record<string, unknown>).privkey) },
     peers,
     relays,
+    nip96Servers,
     port,
     dataDir,
   }
@@ -73,6 +81,7 @@ export async function loadConfig(configPath: string, overrides: ConfigOverrides 
   if (overrides.port !== undefined) config.port = overrides.port
   if (overrides.peers !== undefined) config.peers = overrides.peers
   if (overrides.relays !== undefined) config.relays = overrides.relays
+  if (overrides.nip96Servers !== undefined) config.nip96Servers = overrides.nip96Servers
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
   return config
 }

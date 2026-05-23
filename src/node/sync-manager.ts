@@ -94,6 +94,48 @@ export class SyncManager {
     this.sendDeltaRequest(peerId, this.peerLastSeen.get(peerId) ?? 0)
   }
 
+  getAnnouncementInfo(qkey: string): {
+    hash: string
+    totalPieces: number
+    pieceSize: number
+    sourceUrl?: string
+    name?: string
+    mime?: string
+  } | null {
+    for (const event of this.eventLog.values()) {
+      if (event.kind !== 10800) {
+        continue
+      }
+      const eventQkey = getTag(event.tags, 'qkey') ?? (event as AnyEvent & { id?: string }).id
+      if (eventQkey !== qkey) {
+        continue
+      }
+      const hash = getTag(event.tags, 'hash')
+      const pieces = Number(getTag(event.tags, 'pieces') ?? '0')
+      const pieceSize = Number(getTag(event.tags, 'piece_size') ?? '0')
+      if (!hash || !Number.isFinite(pieces) || !Number.isFinite(pieceSize)) {
+        return null
+      }
+      return {
+        hash,
+        totalPieces: pieces,
+        pieceSize,
+        sourceUrl: getTag(event.tags, 'url') ?? getTag(event.tags, 'r'),
+        name: event.content
+          ? (() => {
+              try {
+                return (JSON.parse(event.content) as { name?: string }).name
+              } catch {
+                return undefined
+              }
+            })()
+          : undefined,
+        mime: getTag(event.tags, 'mime'),
+      }
+    }
+    return null
+  }
+
   private handleAnnouncement(event: AnyEvent, fromPeerId: string): void {
     if (!isValidAnnouncement(event)) {
       return

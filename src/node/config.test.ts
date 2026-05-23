@@ -20,6 +20,7 @@ describe('loadConfig', () => {
       identity: { privkey: 'a'.repeat(64) },
       peers: ['ws://localhost:7778'],
       relays: ['wss://relay.example.com'],
+      nip96Servers: ['https://nip96.example.com/upload'],
       port: 7777,
       dataDir: tmpDir,
     }
@@ -29,6 +30,7 @@ describe('loadConfig', () => {
     expect(loaded.identity.privkey).toBe('a'.repeat(64))
     expect(loaded.peers).toEqual(['ws://localhost:7778'])
     expect(loaded.relays).toEqual(['wss://relay.example.com'])
+    expect(loaded.nip96Servers).toEqual(['https://nip96.example.com/upload'])
   })
 
   it('throws on missing identity.privkey', async () => {
@@ -58,6 +60,12 @@ describe('loadConfig', () => {
     const bad = { identity: { privkey: 'd'.repeat(64) }, peers: [], relays: [1, 2], port: 7777, dataDir: tmpDir }
     await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
     await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('relays')
+  })
+
+  it('throws on invalid nip96Servers array', async () => {
+    const bad = { identity: { privkey: 'e'.repeat(64) }, peers: [], nip96Servers: [1, 2], port: 7777, dataDir: tmpDir }
+    await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
+    await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('nip96Servers')
   })
 })
 

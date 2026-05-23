@@ -115,22 +115,31 @@ program
   .description('Retrieve content by qkey from running node')
   .option('--config <path>', 'Config file path', DEFAULT_CONFIG_PATH)
   .option('--out <file>', 'Output file')
-  .action(async (key: string, opts: { config: string; out?: string }) => {
+  .option('--timeout <ms>', 'Timeout in milliseconds', (value) => Number(value), 30_000)
+  .action(async (key: string, opts: { config: string; out?: string; timeout: number }) => {
     const config = await loadConfig(opts.config)
-    const sockPath = join(config.dataDir, 'qdht.sock')
-    const response = await rpcCall(sockPath, { cmd: 'get', key }) as { error?: string; pieces?: Array<{ index: number; data: string }> }
-    if (response.error) {
-      console.error(`Error: ${response.error}`)
-      process.exit(1)
-      return
+    const node = new QDHTNode(config)
+    const progressHandler = (state: { fetched: number; total: number }) => {
+      if (opts.out) {
+        process.stderr.write(`\rfetching ${state.fetched}/${state.total} pieces...`)
+      }
     }
 
-    const pieces = (response.pieces ?? []).slice().sort((a, b) => a.index - b.index)
-    const data = Buffer.concat(pieces.map((piece) => Buffer.from(piece.data, 'base64')))
-    if (opts.out) {
-      await writeFile(opts.out, data)
-    } else {
-      process.stdout.write(data)
+    node.fetcher.on('progress', progressHandler)
+    try {
+      const data = await node.fetchContent(key, opts.timeout)
+      if (opts.out) {
+        await writeFile(opts.out, data)
+        process.stderr.write('\n')
+      } else {
+        process.stdout.write(data)
+      }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err))
+      process.exitCode = 1
+    } finally {
+      node.fetcher.off('progress', progressHandler)
+      await node.disconnect()
     }
   })
 

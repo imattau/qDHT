@@ -4,6 +4,11 @@ import { join } from 'node:path'
 import { GraphState } from '../core/graph/graph-state.js'
 import { keypairFromHex } from '../core/identity/keys.js'
 import { NeighbourStateMap } from '../core/neighbour-state.js'
+import { ContentProviderRegistry } from '../core/content/provider-registry.js'
+import { PieceFetcherService } from './piece-fetcher-service.js'
+import { ReputationMap } from '../core/protocol/reputation.js'
+import { ReplicaStore } from '../core/content/replica-store.js'
+import { Nip96Provider } from '../core/content/nip96-provider.js'
 import { Propagator } from '../core/propagation/propagator.js'
 import { ContentStore, type ContentLocation, type PutMeta } from './content-store.js'
 import type { QDHTConfig } from './config.js'
@@ -35,6 +40,10 @@ export class QDHTNode {
   private peerManager: PeerManager
   private syncManager: SyncManager
   private contentStore: ContentStore
+  public readonly fetcher: PieceFetcherService
+  private providerRegistry: ContentProviderRegistry
+  private replicaStore: ReplicaStore
+  private reputationMap: ReputationMap
   private relayAdapter: RelayAdapter | null = null
   private rpcServer: NetServer | null = null
   private graph: GraphState
@@ -42,6 +51,7 @@ export class QDHTNode {
   private neighbourState: NeighbourStateMap
   private kp: { pubkey: string; privkey: string }
   private started = false
+  private fetchNetworkConnected = false
 
   constructor(private config: QDHTConfig) {
     this.kp = keypairFromHex(config.identity.privkey)
@@ -50,6 +60,15 @@ export class QDHTNode {
     this.propagator = new Propagator(this.graph, this.graph.getIndex(this.kp.pubkey), 0.5)
     this.neighbourState = new NeighbourStateMap()
     this.contentStore = new ContentStore(config.dataDir)
+    this.replicaStore = new ReplicaStore()
+    this.reputationMap = new ReputationMap()
+    this.providerRegistry = new ContentProviderRegistry()
+
+    if (config.nip96Servers) {
+      for (const serverUrl of config.nip96Servers) {
+        this.providerRegistry.register(new Nip96Provider({ serverUrl }))
+      }
+    }
 
     this.peerManager = new PeerManager({
       port: config.port,
@@ -73,6 +92,13 @@ export class QDHTNode {
       neighbourState: this.neighbourState,
       transports,
     })
+
+    this.fetcher = new PieceFetcherService(
+      this.providerRegistry,
+      this.replicaStore,
+      this.neighbourState,
+      this.reputationMap,
+    )
   }
 
   async start(): Promise<void> {
@@ -81,21 +107,13 @@ export class QDHTNode {
     }
     this.started = true
     await mkdir(this.config.dataDir, { recursive: true })
+    await this.connect()
     await this.peerManager.listen()
-    await this.relayAdapter?.connect()
-    for (const peer of this.config.peers) {
-      this.peerManager.connect(peer)
-    }
     await this.startRpc()
   }
 
   async stop(): Promise<void> {
-    if (!this.started) {
-      return
-    }
-    this.started = false
-    await this.relayAdapter?.close()
-    await this.peerManager.close()
+    await this.disconnect()
     if (this.rpcServer) {
       await new Promise<void>((resolve) => this.rpcServer?.close(() => resolve()))
       this.rpcServer = null
@@ -105,6 +123,28 @@ export class QDHTNode {
     } catch {
       // ignore
     }
+  }
+
+  async connect(): Promise<void> {
+    if (this.fetchNetworkConnected) {
+      return
+    }
+    await mkdir(this.config.dataDir, { recursive: true })
+    await this.relayAdapter?.connect()
+    for (const peer of this.config.peers) {
+      this.peerManager.connect(peer)
+    }
+    this.fetchNetworkConnected = true
+  }
+
+  async disconnect(): Promise<void> {
+    if (!this.fetchNetworkConnected && !this.started) {
+      return
+    }
+    this.fetchNetworkConnected = false
+    await this.relayAdapter?.close()
+    await this.peerManager.close()
+    this.started = false
   }
 
   async put(data: Buffer, meta: PutMeta): Promise<ContentLocation> {
@@ -119,7 +159,44 @@ export class QDHTNode {
       mime: meta.mime,
       name: meta.name,
     })
+    this.replicaStore.declareTotal(loc.hash, loc.totalPieces)
     return loc
+  }
+
+  async fetchContent(key: string, timeoutMs = 30_000): Promise<Buffer> {
+    const local = await this.getContent(key)
+    if (local) {
+      return local
+    }
+
+    const info = this.syncManager.getAnnouncementInfo(key)
+    if (!info) {
+      throw new Error(`No announcement metadata found for ${key}`)
+    }
+    if (!info.sourceUrl) {
+      throw new Error(`No source URL found for ${key}`)
+    }
+
+    await this.connect()
+
+    const fetchPromise = this.fetcher.fetchContent({
+      qkey: key,
+      hash: info.hash,
+      totalPieces: info.totalPieces,
+      pieceSize: info.pieceSize,
+      sourceUrl: info.sourceUrl,
+    })
+
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return await fetchPromise
+    }
+
+    return await Promise.race([
+      fetchPromise,
+      new Promise<Buffer>((_, reject) => {
+        setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
   }
 
   pubkey(): string {

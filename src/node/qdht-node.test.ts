@@ -89,4 +89,21 @@ describe('QDHTNode', () => {
     const resp = await rpc(sockPath, { cmd: 'replicas', key: loc.qkey }) as { replicas: unknown[] }
     expect(Array.isArray(resp.replicas)).toBe(true)
   })
+
+  it('returns locally stored content via fetchContent()', async () => {
+    const config: QDHTConfig = {
+      identity: { privkey: 'c'.repeat(64) },
+      peers: [],
+      port: 19902,
+      dataDir: tmpDir,
+    }
+    node = new QDHTNode(config)
+    await node.start()
+
+    const original = Buffer.from('local qdht content')
+    const loc = await node.put(original, { name: 'local.txt', ttl: 3600 })
+    const fetched = await node.fetchContent(loc.qkey)
+
+    expect(fetched.equals(original)).toBe(true)
+  })
 })

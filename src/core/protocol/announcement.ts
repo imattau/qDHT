@@ -17,6 +17,7 @@ export function buildAnnouncement(opts: {
   ttl: number
   mime?: string
   name?: string
+  url?: string
 }): QDHTAnnouncement {
   const tags = [
     ['qkey', opts.qkey],
@@ -28,6 +29,10 @@ export function buildAnnouncement(opts: {
   ]
   if (opts.mime) {
     tags.push(['mime', opts.mime])
+  }
+  if (opts.url) {
+    tags.push(['url', opts.url])
+    tags.push(['r', opts.url])
   }
 
   return {

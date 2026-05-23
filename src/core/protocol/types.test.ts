@@ -20,6 +20,23 @@ describe('announcement', () => {
     expect(parsed.kind).toBe(10800)
   })
 
+  it('includes url and r tags when provided', () => {
+    const announcement = buildAnnouncement({
+      pubkey: 'pk1',
+      qkey: 'key1',
+      hash: 'abc',
+      sizeBytes: 1024,
+      pieces: 4,
+      pieceSize: 256,
+      ttl: 3600,
+      url: 'https://example.com/file',
+    })
+    expect(announcement.tags).toEqual(expect.arrayContaining([
+      ['url', 'https://example.com/file'],
+      ['r', 'https://example.com/file'],
+    ]))
+  })
+
   it('rejects invalid announcement', () => {
     expect(isValidAnnouncement({ kind: 999 })).toBe(false)
     expect(isValidAnnouncement(null)).toBe(false)
