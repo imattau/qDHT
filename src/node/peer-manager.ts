@@ -103,8 +103,9 @@ export class PeerManager implements Transport {
       this.outboundState.set(url, { delayMs: RECONNECT_MIN_MS, timer: null, active: false })
     }
 
+    // @ts-ignore -- reconnecting-websocket CJS types lose construct signature under NodeNext
     const rws = new ReconnectingWebSocket(url, [], {
-      WebSocket: WebSocket as unknown as typeof ReconnectingWebSocket.prototype.constructor,
+      WebSocket: WebSocket as unknown as new (...args: unknown[]) => unknown,
       maxRetries: Infinity,
       reconnectionDelayGrowFactor: 2,
       minReconnectionDelay: RECONNECT_MIN_MS,
@@ -197,6 +198,7 @@ export class PeerManager implements Transport {
         clearTimeout(state.timer)
         state.timer = null
       }
+      // @ts-ignore -- reconnecting-websocket CJS types lose namespace type under NodeNext
       const rws = (state as unknown as Record<string, unknown>).rws as ReconnectingWebSocket | undefined
       if (rws) {
         rws.close()

@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "tsc --noEmit",
+    "build:dist": "tsc -p tsconfig.build.json",
     "node:build": "tsc --noEmit",
     "node:start": "tsx bin/qdht-node.ts start",
     "web:start": "tsx bin/qdht-node.ts start --web-port 3000",
