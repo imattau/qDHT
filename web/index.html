@@ -6,137 +6,213 @@
     <title>qDHT Node</title>
     <meta name="color-scheme" content="dark" />
     <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js" defer></script>
     <script type="module" src="/app.js"></script>
   </head>
   <body>
     <div class="noise"></div>
-    <main class="shell">
-      <section class="hero panel">
-        <div class="eyebrow">qDHT web node</div>
-        <div class="hero-grid">
-          <div>
-            <h1>Discovery, routing, and content control from the browser.</h1>
-            <p class="lede">
-              Publish content, inspect peers, resolve identities, and fetch local content
-              through the live node without leaving the browser.
-            </p>
+
+    <header class="app-header">
+      <div class="app-header-inner">
+        <div class="brand" aria-label="qDHT">
+          <span class="brand-name">qDHT</span>
+          <span class="brand-dot" id="brand-dot" aria-hidden="true"></span>
+        </div>
+        <nav class="tab-nav" role="tablist" aria-label="Dashboard sections">
+          <button class="tab-btn active" data-tab="overview" role="tab" aria-selected="true">Overview</button>
+          <button class="tab-btn" data-tab="network" role="tab" aria-selected="false">Network</button>
+          <button class="tab-btn" data-tab="tools" role="tab" aria-selected="false">Tools</button>
+        </nav>
+        <div class="header-status">
+          <span class="header-pubkey key-text" id="status-pubkey">loading…</span>
+          <span class="header-badge" id="status-peers">0 peers</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="tab-content">
+      <section class="tab-panel active" data-tab="overview" role="tabpanel">
+        <div class="panel overview-hero">
+          <div class="eyebrow">qDHT web node</div>
+          <h1>Decentralised discovery, routing, and content from the browser.</h1>
+          <p class="lede">
+            Explore the live node, inspect its connections, and publish or fetch content without leaving the page.
+          </p>
+        </div>
+
+        <div class="concept-row">
+          <article class="panel concept-card">
+            <div class="concept-icon">↯</div>
+            <div>
+              <h2>Propagation</h2>
+              <p>
+                Signed announcements move across the network as compact metadata. The node keeps the
+                useful parts, not the raw firehose.
+              </p>
+            </div>
+          </article>
+
+          <article class="panel concept-card">
+            <div class="concept-icon">⌁</div>
+            <div>
+              <h2>Routing</h2>
+              <p>
+                Nostr identity references resolve into dialable endpoints. If a direct route is weak,
+                the node keeps a relay fallback ready.
+              </p>
+            </div>
+          </article>
+
+          <article class="panel concept-card">
+            <div class="concept-icon">◫</div>
+            <div>
+              <h2>Content</h2>
+              <p>
+                Files stay in local storage and are fetched from providers or replicas when the node
+                needs to pull the actual bytes.
+              </p>
+            </div>
+          </article>
+        </div>
+
+        <div class="status-strip">
+          <div class="status-chip">
+            <span>Port</span>
+            <strong id="status-port">—</strong>
           </div>
-          <div class="status-stack">
-            <div class="status-chip">
-              <span>Pubkey</span>
-              <strong id="status-pubkey" class="key-text">loading…</strong>
-            </div>
-            <div class="status-chip">
-              <span>Web UI</span>
-              <strong id="status-web">starting…</strong>
-            </div>
-            <div class="status-chip">
-              <span>Peers</span>
-              <strong id="status-peers">0</strong>
-            </div>
+          <div class="status-chip">
+            <span>Data dir</span>
+            <strong id="status-data-dir" class="key-text">—</strong>
+          </div>
+          <div class="status-chip">
+            <span>Peers</span>
+            <strong id="status-peer-count">0</strong>
+          </div>
+          <div class="status-chip">
+            <span>Status</span>
+            <strong id="status-online">starting…</strong>
           </div>
         </div>
       </section>
 
-      <section class="grid">
-        <article class="panel card">
-          <header>
-            <div class="eyebrow">Node status</div>
-            <h2>Runtime snapshot</h2>
-          </header>
-          <dl class="stats" id="status-stats"></dl>
-        </article>
-
-        <article class="panel card">
-          <header>
-            <div class="eyebrow">Publish</div>
-            <h2>Store and announce a file</h2>
-          </header>
-          <form id="put-form" class="stack">
-            <label>
-              <span>File</span>
-              <input id="put-file" type="file" required />
-            </label>
-            <div class="two-up">
-              <label>
-                <span>Name</span>
-                <input id="put-name" type="text" placeholder="guide.pdf" />
-              </label>
-              <label>
-                <span>TTL seconds</span>
-                <input id="put-ttl" type="number" min="1" step="1" value="86400" />
-              </label>
+      <section class="tab-panel" data-tab="network" role="tabpanel">
+        <div class="network-shell">
+          <div class="panel network-graph-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">Network</div>
+                <h2>Live peer graph</h2>
+              </div>
+              <div class="panel-note">Drag nodes. The view auto-centres as peers change.</div>
             </div>
-            <label>
-              <span>MIME type</span>
-              <input id="put-mime" type="text" placeholder="application/pdf" />
-            </label>
-            <button type="submit">Publish</button>
-          </form>
-        </article>
-
-        <article class="panel card">
-          <header>
-            <div class="eyebrow">Search</div>
-            <h2>Find identities or metadata</h2>
-          </header>
-          <form id="search-form" class="stack">
-            <label>
-              <span>Query</span>
-              <input id="search-query" type="text" placeholder="npub..., hash, file name, tag" required />
-            </label>
-            <div class="two-up">
-              <label>
-                <span>Type</span>
-                <select id="search-type">
-                  <option value="identity">Identity</option>
-                  <option value="content" selected>Content</option>
-                  <option value="route">Route</option>
-                  <option value="replica">Replica</option>
-                </select>
-              </label>
-              <label>
-                <span>Limit</span>
-                <input id="search-limit" type="number" min="1" step="1" value="25" />
-              </label>
+            <div class="graph-frame">
+              <div id="graph-empty" class="graph-empty">
+                <div class="graph-empty-card">
+                  <p>No peers connected. Preview a synthetic mesh before the first live peer joins.</p>
+                  <button type="button" id="simulate-network">Simulate network</button>
+                </div>
+              </div>
+              <svg id="network-graph" aria-label="Live peer graph"></svg>
             </div>
-            <button type="submit">Search</button>
-          </form>
-        </article>
+          </div>
 
-        <article class="panel card">
-          <header>
-            <div class="eyebrow">Fetch</div>
-            <h2>Retrieve a stored content key</h2>
-          </header>
-          <form id="fetch-form" class="stack">
-            <label>
-              <span>qkey</span>
-              <input id="fetch-key" type="text" placeholder="64 hex chars" required />
-            </label>
-            <button type="submit">Fetch</button>
-          </form>
-        </article>
+          <div class="panel network-list-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">Peers</div>
+                <h2>Connected transports</h2>
+              </div>
+              <div class="panel-note">Live connections only.</div>
+            </div>
+            <div id="peers" class="list list-scroll"></div>
+          </div>
+        </div>
       </section>
 
-      <section class="grid wide">
-        <article class="panel card">
-          <header>
-            <div class="eyebrow">Peers</div>
-            <h2>Connected transports</h2>
-          </header>
-          <div id="peers" class="list"></div>
-        </article>
+      <section class="tab-panel" data-tab="tools" role="tabpanel">
+        <div class="tools-shell">
+          <div class="panel tools-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">Tools</div>
+                <h2>Publish, search, and fetch</h2>
+              </div>
+            </div>
 
-        <article class="panel card output">
-          <header>
-            <div class="eyebrow">Output</div>
-            <h2>Search and fetch results</h2>
-          </header>
-          <div id="output" class="output-body">
-            <p class="muted">Run a search, publish a file, or fetch a key to populate this panel.</p>
+            <div class="segmented-control" role="tablist" aria-label="Tool mode">
+              <button class="segment-btn active" data-tool="publish" role="tab" aria-selected="true">Publish</button>
+              <button class="segment-btn" data-tool="search" role="tab" aria-selected="false">Search</button>
+              <button class="segment-btn" data-tool="fetch" role="tab" aria-selected="false">Fetch</button>
+            </div>
+
+            <div class="tool-stack">
+              <form id="put-form" class="stack tool-form active" data-tool="publish">
+                <label>
+                  <span>File</span>
+                  <input id="put-file" type="file" required />
+                </label>
+                <div class="two-up">
+                  <label>
+                    <span>Name</span>
+                    <input id="put-name" type="text" placeholder="guide.pdf" />
+                  </label>
+                  <label>
+                    <span>TTL seconds</span>
+                    <input id="put-ttl" type="number" min="1" step="1" value="86400" />
+                  </label>
+                </div>
+                <label>
+                  <span>MIME type</span>
+                  <input id="put-mime" type="text" placeholder="application/pdf" />
+                </label>
+                <button type="submit">Publish</button>
+              </form>
+
+              <form id="search-form" class="stack tool-form" data-tool="search">
+                <label>
+                  <span>Query</span>
+                  <input id="search-query" type="text" placeholder="npub..., hash, file name, tag" required />
+                </label>
+                <div class="two-up">
+                  <label>
+                    <span>Type</span>
+                    <select id="search-type">
+                      <option value="identity">Identity</option>
+                      <option value="content" selected>Content</option>
+                      <option value="route">Route</option>
+                      <option value="replica">Replica</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Limit</span>
+                    <input id="search-limit" type="number" min="1" step="1" value="25" />
+                  </label>
+                </div>
+                <button type="submit">Search</button>
+              </form>
+
+              <form id="fetch-form" class="stack tool-form" data-tool="fetch">
+                <label>
+                  <span>qkey</span>
+                  <input id="fetch-key" type="text" placeholder="64 hex chars" required />
+                </label>
+                <button type="submit">Fetch</button>
+              </form>
+            </div>
           </div>
-        </article>
+
+          <div class="panel output-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">Output</div>
+                <h2>Results</h2>
+              </div>
+            </div>
+            <div id="output" class="output-body">
+              <p class="muted">Run a search, publish a file, or fetch a key to populate this panel.</p>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
   </body>

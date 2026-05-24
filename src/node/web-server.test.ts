@@ -47,6 +47,7 @@ describe('QDHT web frontend', () => {
     expect(root.ok).toBe(true)
     const html = await root.text()
     expect(html).toContain('qDHT web node')
+    expect(html).toContain('Simulate network')
 
     const status = await fetch(`${base}/api/status`).then(async (response) => await response.json()) as {
       pubkey: string

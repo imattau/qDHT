@@ -22,7 +22,7 @@ export function jacobiEigen(a: number[][]): { values: number[]; vectors: number[
   const { Matrix, EigenvalueDecomposition } = require('ml-matrix') as typeof import('ml-matrix')
   const evd = new EigenvalueDecomposition(new Matrix(a))
   const rawValues = evd.realEigenvalues as number[]
-  const rawVectors = (evd.eigenvectorMatrix as Matrix).to2DArray() as number[][]
+  const rawVectors = evd.eigenvectorMatrix.to2DArray() as number[][]
 
   const order = rawValues
     .map((_, i) => i)
