@@ -120,11 +120,25 @@ program
   .option('--port <port>', 'Override listen port', (value) => Number(value))
   .option('--web-port <port>', 'Override web UI port', (value) => Number(value))
   .option('--data-dir <dir>', 'Override data directory')
-  .action(async (opts: { config: string; port?: number; webPort?: number; dataDir?: string }) => {
+  .option('--bootstrap', 'Run in bootstrap mode (rendezvous only, no routing)')
+  .option('--max-peers <n>', 'Maximum concurrent peers (bootstrap mode only)', (value) => Number(value))
+  .option('--listen-address <url>', 'Publicly reachable WebSocket URL to advertise in 30181')
+  .action(async (opts: {
+    config: string
+    port?: number
+    webPort?: number
+    dataDir?: string
+    bootstrap?: boolean
+    maxPeers?: number
+    listenAddress?: string
+  }) => {
     const config = await loadNodeConfig(opts.config, {
       port: opts.port,
       webPort: opts.webPort,
       dataDir: opts.dataDir,
+      bootstrapMode: opts.bootstrap,
+      maxPeers: opts.maxPeers,
+      listenAddress: opts.listenAddress,
     })
     const node = new QDHTNode(config)
     await node.start()
