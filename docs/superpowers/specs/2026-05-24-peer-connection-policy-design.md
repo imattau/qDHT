@@ -44,23 +44,27 @@ export interface ServiceRecord {
 export interface PeerDiscoveryPolicy {
   shouldConnect(
     record: ServiceRecord,
-    currentPeers: PeerInfo[],
+    currentPeers: PeerInfo[],   // PeerInfo imported from src/node/peer-manager.ts
     reputationMap: ReputationMap,
     maxPeers: number
   ): boolean;
 }
+
+// PeerInfo (from src/node/peer-manager.ts):
+// export interface PeerInfo { pubkey: string; url: string; latencyMs: number | null; connectedAt: string }
+
 ```
 
 ### Gate logic (in order, short-circuit)
 
 1. `currentPeers.length >= maxPeers` → `false`
-2. URL already present in `currentPeers` (exact match after normalisation) → `false`
+2. URL already present in `currentPeers` — checked via `currentPeers.some(p => p.url === url)` using the `.url` field of `PeerInfo` (exact match after normalisation) → `false`
 3. `reputationMap.get(record.advertiserPubkey) < REPUTATION_CONNECT_THRESHOLD` → `false`
 4. Otherwise → `true`
 
 ### SyncManager integration
 
-`SyncManager` receives `PeerDiscoveryPolicy`, `PeerManager`, `ReputationMap`, and `maxPeers` via constructor injection.
+`SyncManager` receives `PeerDiscoveryPolicy`, `PeerManager`, `ReputationMap`, and `maxPeers` via constructor injection. `SyncManager` also receives `listenAddress` from `QDHTConfig` at construction time (the same `config.listenAddress` field that `PeerManager` publishes in kind `30181`) and stores it as `this.ownUrl` for self-connect prevention. No new constructor parameter is needed — `listenAddress` is already present in `QDHTConfig`.
 
 On kind `30181`:
 
