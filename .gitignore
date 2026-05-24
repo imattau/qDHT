@@ -10,3 +10,4 @@ yarn-error.log*
 coverage/
 *.tsbuildinfo
 PHASE5_AUDIT_REPORT.md
+docs/superpowers/
