@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { WebSocket } from 'ws'
+import { signEvent } from '../core/identity/signing.js'
+import { QDHT_KIND } from '../core/nostr/kinds.js'
 import { createConnection, createServer } from 'node:net'
 import { join } from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -231,5 +234,117 @@ describe('QDHTNode', () => {
 
     expect(node.listenPort()).toBeGreaterThan(occupied.port)
     await new Promise<void>((resolve) => occupied.server.close(() => resolve()))
+  })
+})
+
+describe('QDHTNode bootstrapMode', () => {
+  let bootstrapNode: QDHTNode | undefined
+  let bsTmpDir: string
+
+  beforeEach(async () => {
+    bsTmpDir = await mkdtemp(join(tmpdir(), 'qdht-bs-'))
+  })
+
+  afterEach(async () => {
+    await bootstrapNode?.stop()
+    bootstrapNode = undefined
+    await rm(bsTmpDir, { recursive: true, force: true })
+  })
+
+  it('starts in bootstrap mode without error', async () => {
+    const kp = generateKeypair()
+    bootstrapNode = new QDHTNode(
+      {
+        identity: { privkey: kp.privkey },
+        peers: [],
+        port: 0,
+        dataDir: bsTmpDir,
+        bootstrapMode: true,
+        maxPeers: 100,
+      },
+      new MemoryNodeStorage(),
+    )
+    await bootstrapNode.start()
+    expect(bootstrapNode.listenPort()).toBeGreaterThan(0)
+  })
+
+  it('caches and fans out 30181 events received from peers', async () => {
+    const nodeKp = generateKeypair()
+    bootstrapNode = new QDHTNode(
+      {
+        identity: { privkey: nodeKp.privkey },
+        peers: [],
+        port: 0,
+        dataDir: bsTmpDir,
+        bootstrapMode: true,
+      },
+      new MemoryNodeStorage(),
+    )
+    await bootstrapNode.start()
+    const port = bootstrapNode.listenPort()
+
+    const peer1Kp = generateKeypair()
+    const peer2Kp = generateKeypair()
+
+    const peer1 = new WebSocket(`ws://127.0.0.1:${port}`)
+    const peer2 = new WebSocket(`ws://127.0.0.1:${port}`)
+
+    const peer2Received: unknown[] = []
+    peer2.on('message', (data: import('ws').RawData) => {
+      peer2Received.push(JSON.parse(data.toString()))
+    })
+
+    async function doHandshake(ws: WebSocket, pubkey: string): Promise<void> {
+      await new Promise<void>((resolve) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'handshake', pubkey }))
+          resolve()
+          return
+        }
+        ws.on('open', () => {
+          ws.send(JSON.stringify({ type: 'handshake', pubkey }))
+          resolve()
+        })
+      })
+    }
+
+    function wait(ms: number): Promise<void> {
+      return new Promise((resolve) => setTimeout(resolve, ms))
+    }
+
+    async function waitForCondition(fn: () => boolean, timeoutMs = 3000): Promise<void> {
+      const start = Date.now()
+      while (!fn()) {
+        if (Date.now() - start > timeoutMs) throw new Error('timeout')
+        await wait(20)
+      }
+    }
+
+    await doHandshake(peer1, peer1Kp.pubkey)
+    await doHandshake(peer2, peer2Kp.pubkey)
+    await wait(100)
+
+    const record = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: peer1Kp.pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['transport', 'ws'], ['d', 'main'], ['url', 'ws://peer1:7777']],
+        content: '',
+        sig: '',
+      },
+      peer1Kp.privkey,
+    )
+    peer1.send(JSON.stringify(record))
+
+    await waitForCondition(
+      () =>
+        (peer2Received as Array<Record<string, unknown>>).some(
+          (m) => m.kind === QDHT_KIND.SERVICE_RECORD && m.pubkey === peer1Kp.pubkey,
+        ),
+    )
+
+    peer1.close()
+    peer2.close()
   })
 })

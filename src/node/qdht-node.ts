@@ -23,6 +23,7 @@ import type { NodeStorage } from '../core/storage/node-storage.js'
 import { SqliteNodeStorage } from '../core/storage/sqlite-node-storage.js'
 import type { StoredNostrEvent } from '../core/storage/event-repository.js'
 import type { Transport } from './transport.js'
+import { BootstrapService } from './bootstrap-service.js'
 
 type RpcRequest =
   | { cmd: 'peers' }
@@ -95,22 +96,33 @@ export class QDHTNode {
   private kp: { pubkey: string; privkey: string }
   private started = false
   private fetchNetworkConnected = false
+  private bootstrapService: BootstrapService | null = null
 
   constructor(private config: QDHTConfig, storage?: NodeStorage) {
     this.kp = keypairFromHex(config.identity.privkey)
     this.graph = new GraphState()
     this.graph.addNode(this.kp.pubkey)
-    this.propagator = new Propagator(this.graph, this.graph.getIndex(this.kp.pubkey), 0.5)
-    this.neighbourState = new NeighbourStateMap()
-    this.replicaStore = new ReplicaStore()
-    this.reputationMap = new ReputationMap()
-    this.providerRegistry = new ContentProviderRegistry()
     this.storage = storage ?? new SqliteNodeStorage(config.dataDir)
     this.contentStore = this.storage.content
 
-    if (config.nip96Servers) {
-      for (const serverUrl of config.nip96Servers) {
-        this.providerRegistry.register(new Nip96Provider({ serverUrl }))
+    if (config.bootstrapMode) {
+      // Bootstrap mode: skip heavy subsystems
+      this.propagator = null as unknown as Propagator
+      this.neighbourState = null as unknown as NeighbourStateMap
+      this.replicaStore = null as unknown as ReplicaStore
+      this.reputationMap = null as unknown as ReputationMap
+      this.providerRegistry = null as unknown as ContentProviderRegistry
+    } else {
+      this.propagator = new Propagator(this.graph, this.graph.getIndex(this.kp.pubkey), 0.5)
+      this.neighbourState = new NeighbourStateMap()
+      this.replicaStore = new ReplicaStore()
+      this.reputationMap = new ReputationMap()
+      this.providerRegistry = new ContentProviderRegistry()
+
+      if (config.nip96Servers) {
+        for (const serverUrl of config.nip96Servers) {
+          this.providerRegistry.register(new Nip96Provider({ serverUrl }))
+        }
       }
     }
 
@@ -120,43 +132,75 @@ export class QDHTNode {
       port: config.port,
       pubkey: this.kp.pubkey,
       privkey: this.kp.privkey,
+      listenAddress: config.listenAddress,
     })
 
     const transports: Transport[] = [this.peerManager]
-    if (config.relays && config.relays.length > 0) {
-      this.relayAdapter = new RelayAdapter({
-        privkey: this.kp.privkey,
-        relayUrls: config.relays,
-      })
-      transports.push(this.relayAdapter)
-    }
+    if (!config.bootstrapMode) {
+      if (config.relays && config.relays.length > 0) {
+        this.relayAdapter = new RelayAdapter({
+          privkey: this.kp.privkey,
+          relayUrls: config.relays,
+        })
+        transports.push(this.relayAdapter)
+      }
 
-    if ((config.quicPeers && config.quicPeers.length > 0) || config.quicListenPort !== undefined) {
-      this.quicAdapter = new QuicAdapter({
+      if ((config.quicPeers && config.quicPeers.length > 0) || config.quicListenPort !== undefined) {
+        this.quicAdapter = new QuicAdapter({
+          pubkey: this.kp.pubkey,
+          peers: config.quicPeers ?? [],
+          listenPort: config.quicListenPort,
+          dataDir: config.dataDir,
+        })
+        transports.push(this.quicAdapter)
+      }
+
+      this.syncManager = new SyncManager({
         pubkey: this.kp.pubkey,
-        peers: config.quicPeers ?? [],
-        listenPort: config.quicListenPort,
-        dataDir: config.dataDir,
+        privkey: this.kp.privkey,
+        propagator: this.propagator,
+        neighbourState: this.neighbourState,
+        reputationMap: this.reputationMap,
+        eventStore: this.storage.events,
+        transports,
       })
-      transports.push(this.quicAdapter)
+
+      this.fetcher = new PieceFetcherService(
+        this.providerRegistry,
+        this.replicaStore,
+        this.neighbourState,
+        this.reputationMap,
+      )
+    } else {
+      this.syncManager = null as unknown as SyncManager
+      this.fetcher = null as unknown as PieceFetcherService
+
+      // Wire BootstrapService
+      this.bootstrapService = new BootstrapService({
+        pubkey: this.kp.pubkey,
+        privkey: this.kp.privkey,
+        maxPeers: config.maxPeers,
+      })
+
+      this.peerManager.onPeerConnected((peerId: string, info: import('./peer-manager.js').PeerInfo) => {
+        this.bootstrapService!.onPeerConnected(
+          peerId,
+          info.url,
+          (msg) => this.peerManager.send(peerId, msg),
+        )
+      })
+      this.peerManager.onPeerDisconnected((peerId: string, _info: import('./peer-manager.js').PeerInfo) => {
+        this.bootstrapService!.onPeerDisconnected(peerId)
+      })
+      this.peerManager.onMessage((msg: unknown, peerId: string) => {
+        this.bootstrapService!.handleEvent(
+          msg,
+          peerId,
+          (event) => this.peerManager.broadcast(event, peerId),
+          (event) => this.peerManager.send(peerId, event),
+        )
+      })
     }
-
-    this.syncManager = new SyncManager({
-      pubkey: this.kp.pubkey,
-      privkey: this.kp.privkey,
-      propagator: this.propagator,
-      neighbourState: this.neighbourState,
-      reputationMap: this.reputationMap,
-      eventStore: this.storage.events,
-      transports,
-    })
-
-    this.fetcher = new PieceFetcherService(
-      this.providerRegistry,
-      this.replicaStore,
-      this.neighbourState,
-      this.reputationMap,
-    )
 
     if (config.webPort !== undefined) {
       this.webServer = new NodeWebServer(this, config.webPort)
@@ -178,8 +222,9 @@ export class QDHTNode {
   async stop(): Promise<void> {
     await this.webServer?.close()
     await this.disconnect()
+    this.bootstrapService?.stop()
     this.storage.close()
-    this.syncManager.close()
+    this.syncManager?.close()
     this.discoveryDirectory.close()
     if (this.rpcServer) {
       await new Promise<void>((resolve) => this.rpcServer?.close(() => resolve()))
@@ -197,10 +242,12 @@ export class QDHTNode {
       return
     }
     await mkdir(this.config.dataDir, { recursive: true })
-    await this.relayAdapter?.connect()
-    await this.quicAdapter?.connect()
-    for (const peer of this.config.peers) {
-      await this.connectPeerRef(peer)
+    if (!this.config.bootstrapMode) {
+      await this.relayAdapter?.connect()
+      await this.quicAdapter?.connect()
+      for (const peer of this.config.peers) {
+        await this.connectPeerRef(peer)
+      }
     }
     this.fetchNetworkConnected = true
   }
