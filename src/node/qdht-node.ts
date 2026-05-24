@@ -24,6 +24,7 @@ import { SqliteNodeStorage } from '../core/storage/sqlite-node-storage.js'
 import type { StoredNostrEvent } from '../core/storage/event-repository.js'
 import type { Transport } from './transport.js'
 import { BootstrapService } from './bootstrap-service.js'
+import { DefaultPeerDiscoveryPolicy } from './peer-discovery-policy.js'
 
 type RpcRequest =
   | { cmd: 'peers' }
@@ -163,6 +164,12 @@ export class QDHTNode {
         reputationMap: this.reputationMap,
         eventStore: this.storage.events,
         transports,
+        peerManager: this.peerManager,
+        peerDiscoveryPolicy: new DefaultPeerDiscoveryPolicy(),
+        maxPeers: config.maxPeers ?? 50,
+        ownUrl: config.listenAddress,
+        ownPubkey: this.kp.pubkey,
+        bootstrapMode: config.bootstrapMode,
       })
 
       this.fetcher = new PieceFetcherService(

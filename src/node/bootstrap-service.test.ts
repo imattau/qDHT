@@ -126,7 +126,7 @@ describe('BootstrapService', () => {
       (m) => m.kind === QDHT_KIND.SERVICE_RECORD,
     )
     expect(serviceRecords.length).toBe(1)
-    expect(serviceRecords[0].pubkey).toBe(peer1.pubkey)
+    expect(serviceRecords[0]!.pubkey).toBe(peer1.pubkey)
   })
 
   it('sends observed_address (kind 30800) to newly connected peer', () => {

@@ -13,8 +13,12 @@ import { buildRequestAnnouncement } from '../core/protocol/request.js'
 import { buildRouteAnnouncement } from '../core/discovery/reachability.js'
 import { signRouteAnnouncement } from '../core/discovery/reachability.js'
 import { NostrSqliteStore } from '../core/nostr/sqlite-store.js'
+import { QDHT_KIND } from '../core/nostr/kinds.js'
+import { signEvent } from '../core/identity/signing.js'
 import { SyncManager } from './sync-manager.js'
+import { DefaultPeerDiscoveryPolicy } from './peer-discovery-policy.js'
 import type { Transport } from './transport.js'
+import type { PeerManager } from './peer-manager.js'
 
 function makeMockTransport(): Transport & {
   broadcasts: Array<{ msg: unknown; excludePeerId?: string }>
@@ -60,10 +64,40 @@ function makeMockTransport(): Transport & {
   }
 }
 
+function makeMockPeerManager(initialPeers: Array<{ pubkey: string; url: string }> = []): PeerManager & {
+  connect: ReturnType<typeof vi.fn>
+  peers: ReturnType<typeof vi.fn>
+  setPeers(peers: Array<{ pubkey: string; url: string }>): void
+} {
+  let peers = initialPeers.map((peer) => ({
+    pubkey: peer.pubkey,
+    url: peer.url,
+    latencyMs: null,
+    connectedAt: new Date().toISOString(),
+  }))
+  return {
+    connect: vi.fn(),
+    peers: vi.fn(() => peers),
+    setPeers(nextPeers: Array<{ pubkey: string; url: string }>) {
+      peers = nextPeers.map((peer) => ({
+        pubkey: peer.pubkey,
+        url: peer.url,
+        latencyMs: null,
+        connectedAt: new Date().toISOString(),
+      }))
+    },
+  } as unknown as PeerManager & {
+    connect: ReturnType<typeof vi.fn>
+    peers: ReturnType<typeof vi.fn>
+    setPeers(peers: Array<{ pubkey: string; url: string }>): void
+  }
+}
+
 let tmpRoot = ''
 const openStores: NostrSqliteStore[] = []
 
 function makeDeps() {
+  const nodeKp = generateKeypair()
   const eventStorePath = join(tmpRoot, 'qdht.sqlite')
   const eventStore = new NostrSqliteStore(eventStorePath)
   openStores.push(eventStore)
@@ -73,16 +107,22 @@ function makeDeps() {
   const neighbourState = new NeighbourStateMap()
   const transport = makeMockTransport()
   const reputationMap = new ReputationMap()
+  const peerManager = makeMockPeerManager()
   const sm = new SyncManager({
-    pubkey: 'a'.repeat(64),
-    privkey: 'a'.repeat(64),
+    pubkey: nodeKp.pubkey,
+    privkey: nodeKp.privkey,
     propagator,
     neighbourState,
     reputationMap,
     eventStore,
     transports: [transport],
+    peerManager,
+    peerDiscoveryPolicy: new DefaultPeerDiscoveryPolicy(),
+    maxPeers: 50,
+    ownUrl: 'ws://127.0.0.1:7777/',
+    ownPubkey: nodeKp.pubkey,
   })
-  return { sm, transport, neighbourState, reputationMap, eventStore, eventStorePath }
+  return { sm, transport, peerManager, neighbourState, reputationMap, eventStore, eventStorePath, nodeKp }
 }
 
 describe('SyncManager', () => {
@@ -154,6 +194,178 @@ describe('SyncManager', () => {
     expect(transport.broadcasts).toHaveLength(1)
     expect(transport.broadcasts[0]).toMatchObject({ excludePeerId: 'peer-b' })
     expect(transport.broadcasts[0]!.msg).toMatchObject({ kind: 10804 })
+  })
+
+  it('handles kind 30181 service records by connecting when policy approves', () => {
+    const { sm, transport, peerManager } = makeDeps()
+    const advertiser = generateKeypair()
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: advertiser.pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['transport', 'ws'],
+          ['d', 'main'],
+          ['url', 'ws://peer.example:7777'],
+        ],
+        content: '',
+        sig: '',
+      },
+      advertiser.privkey,
+    )
+
+    sm.handleMessage(event, 'peer-b')
+
+    expect(transport.broadcasts).toHaveLength(1)
+    expect(transport.broadcasts[0]).toMatchObject({ msg: event, excludePeerId: 'peer-b' })
+    expect(peerManager.connect).toHaveBeenCalledWith('ws://peer.example:7777/')
+  })
+
+  it('skips kind 30181 self-connect events', () => {
+    const { sm, transport, peerManager, nodeKp } = makeDeps()
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: nodeKp.pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['transport', 'ws'],
+          ['d', 'main'],
+          ['url', 'ws://127.0.0.1:7777'],
+        ],
+        content: '',
+        sig: '',
+      },
+      nodeKp.privkey,
+    )
+
+    sm.handleMessage(event, 'peer-b')
+
+    expect(peerManager.connect).not.toHaveBeenCalled()
+    expect(transport.broadcasts).toHaveLength(0)
+  })
+
+  it('skips kind 30181 service records when the peer cap is reached', () => {
+    const { sm, transport, peerManager } = makeDeps()
+    peerManager.setPeers(Array.from({ length: 50 }, (_, index) => ({
+      pubkey: `${index}`.padStart(64, 'b'),
+      url: `ws://peer-${index}.example:7777`,
+    })))
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: 'c'.repeat(64),
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['transport', 'ws'],
+          ['d', 'main'],
+          ['url', 'ws://peer.example:7777'],
+        ],
+        content: '',
+        sig: '',
+      },
+      'c'.repeat(64),
+    )
+
+    sm.handleMessage(event, 'peer-b')
+
+    expect(peerManager.connect).not.toHaveBeenCalled()
+    expect(transport.broadcasts).toHaveLength(1)
+  })
+
+  it('skips kind 30181 service records when the advertiser reputation is below threshold', () => {
+    const { sm, transport, peerManager, reputationMap } = makeDeps()
+    const advertiser = generateKeypair()
+    reputationMap.set(advertiser.pubkey, -0.5)
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: advertiser.pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['transport', 'ws'],
+          ['d', 'main'],
+          ['url', 'ws://peer.example:7777'],
+        ],
+        content: '',
+        sig: '',
+      },
+      advertiser.privkey,
+    )
+
+    sm.handleMessage(event, 'peer-b')
+
+    expect(peerManager.connect).not.toHaveBeenCalled()
+    expect(transport.broadcasts).toHaveLength(1)
+  })
+
+  it('skips malformed kind 30181 URLs', () => {
+    const { sm, transport, peerManager } = makeDeps()
+    const advertiser = generateKeypair()
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: advertiser.pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['transport', 'ws'],
+          ['d', 'main'],
+          ['url', 'not-a-url'],
+        ],
+        content: '',
+        sig: '',
+      },
+      advertiser.privkey,
+    )
+
+    sm.handleMessage(event, 'peer-b')
+
+    expect(peerManager.connect).not.toHaveBeenCalled()
+    expect(transport.broadcasts).toHaveLength(0)
+  })
+
+  it('skips kind 30181 service records in bootstrap mode', () => {
+    const eventStore = new NostrSqliteStore(join(tmpRoot, 'bootstrap-service.sqlite'))
+    openStores.push(eventStore)
+    const graph = new GraphState()
+    graph.addNode('local')
+    const transport = makeMockTransport()
+    const peerManager = makeMockPeerManager()
+    const sm = new SyncManager({
+      pubkey: 'a'.repeat(64),
+      privkey: 'a'.repeat(64),
+      propagator: new Propagator(graph, graph.getIndex('local'), 0.5),
+      neighbourState: new NeighbourStateMap(),
+      reputationMap: new ReputationMap(),
+      eventStore,
+      transports: [transport],
+      peerManager,
+      peerDiscoveryPolicy: new DefaultPeerDiscoveryPolicy(),
+      maxPeers: 50,
+      ownUrl: 'ws://127.0.0.1:7777/',
+      ownPubkey: 'a'.repeat(64),
+      bootstrapMode: true,
+    })
+    const peer = generateKeypair()
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: peer.pubkey,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['transport', 'ws'], ['d', 'main'], ['url', 'ws://peer.example:7777']],
+        content: '',
+        sig: '',
+      },
+      peer.privkey,
+    )
+
+    sm.handleMessage(event, 'peer-b')
+
+    expect(transport.broadcasts).toHaveLength(0)
+    expect(peerManager.connect).not.toHaveBeenCalled()
+    sm.close()
+    eventStore.close()
   })
 
   it('answers a request announcement with matching announcements and route records', () => {

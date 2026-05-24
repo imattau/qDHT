@@ -5,12 +5,15 @@ import { NeighbourStateMap } from '../core/neighbour-state.js'
 import { Propagator } from '../core/propagation/propagator.js'
 import { buildAnnouncement, isValidAnnouncement } from '../core/protocol/announcement.js'
 import { buildDeltaRequest, buildDeltaResponse, buildReputationDelta } from '../core/protocol/delta.js'
+import { QDHT_KIND } from '../core/nostr/kinds.js'
 import { buildRequestAnnouncement, buildRequestResponse, isValidRequestAnnouncement, isValidRequestResponse, parseRequestAnnouncement, parseRequestResponse, type QDHTRequestPayload, type QDHTRequestResponsePayload } from '../core/protocol/request.js'
 import { getTag } from '../core/nostr/tags.js'
 import { type NostrEventRepository, type StoredNostrEvent } from '../core/storage/event-repository.js'
 import { ReputationMap } from '../core/protocol/reputation.js'
 import { REACHABILITY_KIND, normalizeIdentityRef, parseObservedAddressEvent, parseRouteAnnouncement, signRouteAnnouncement, type RouteAnnouncement } from '../core/discovery/reachability.js'
 import type { Transport } from './transport.js'
+import { normalizeServiceRecordUrl, type PeerDiscoveryPolicy } from './peer-discovery-policy.js'
+import type { PeerManager } from './peer-manager.js'
 
 export interface SyncManagerOptions {
   pubkey: string
@@ -21,6 +24,12 @@ export interface SyncManagerOptions {
   eventStore: NostrEventRepository
   ownsEventStore?: boolean
   transports: Transport[]
+  peerManager?: PeerManager
+  peerDiscoveryPolicy?: PeerDiscoveryPolicy
+  maxPeers?: number
+  ownUrl?: string
+  ownPubkey?: string
+  bootstrapMode?: boolean
 }
 
 type AnyEvent = {
@@ -82,6 +91,9 @@ export class SyncManager {
         break
       case 10805:
         this.handleRequestResponse(event)
+        break
+      case QDHT_KIND.SERVICE_RECORD:
+        this.handleServiceRecord(event, fromPeerId)
         break
       case REACHABILITY_KIND.OBSERVED_ADDRESS:
         this.handleObservedAddress(event)
@@ -289,6 +301,45 @@ export class SyncManager {
     const parsed = parseRequestResponse(event)
     if (parsed) {
       this.requestResponses.set(parsed.requestId, parsed)
+    }
+  }
+
+  private handleServiceRecord(event: AnyEvent, fromPeerId: string): void {
+    if (this.opts.bootstrapMode) {
+      return
+    }
+    if (!isSignedEvent(event) || !verifyEvent(event)) {
+      return
+    }
+
+    const url = normalizeServiceRecordUrl(getTag(event.tags, 'url') ?? '')
+    if (!url) {
+      return
+    }
+
+    const ownUrl = this.opts.ownUrl ? normalizeServiceRecordUrl(this.opts.ownUrl) ?? this.opts.ownUrl : null
+    if (url === ownUrl || event.pubkey === (this.opts.ownPubkey ?? this.opts.pubkey)) {
+      return
+    }
+
+    const id = (event as AnyEvent & { id?: string }).id ?? `${event.pubkey}-${event.created_at}`
+    this.recordEvent({ ...event, id })
+    this.broadcast(event, fromPeerId)
+
+    if (!this.opts.peerManager || !this.opts.peerDiscoveryPolicy) {
+      return
+    }
+
+    const maxPeers = this.opts.maxPeers ?? 50
+    const currentPeers = this.opts.peerManager.peers()
+    const shouldConnect = this.opts.peerDiscoveryPolicy.shouldConnect(
+      { url, advertiserPubkey: event.pubkey },
+      currentPeers,
+      this.opts.reputationMap,
+      maxPeers,
+    )
+    if (shouldConnect) {
+      this.opts.peerManager.connect(url)
     }
   }
 
