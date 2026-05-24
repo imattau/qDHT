@@ -18,83 +18,19 @@ export function buildLaplacian(n: number, neighbors: Map<number, Set<number>>): 
 }
 
 export function jacobiEigen(a: number[][]): { values: number[]; vectors: number[][] } {
-  const n = a.length
-  const mat = a.map((row) => row.slice())
-  const vectors: number[][] = Array.from({ length: n }, (_, row) =>
-    Array.from({ length: n }, (_, col) => (row === col ? 1 : 0)),
-  )
-  const epsilon = 1e-12
-  const maxIter = Math.max(1, 64 * n * n)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Matrix, EigenvalueDecomposition } = require('ml-matrix') as typeof import('ml-matrix')
+  const evd = new EigenvalueDecomposition(new Matrix(a))
+  const rawValues = evd.realEigenvalues as number[]
+  const rawVectors = (evd.eigenvectorMatrix as Matrix).to2DArray() as number[][]
 
-  for (let iter = 0; iter < maxIter; iter++) {
-    let p = 0
-    let q = 0
-    let maxVal = 0
-
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const value = Math.abs(mat[i]![j] ?? 0)
-        if (value > maxVal) {
-          maxVal = value
-          p = i
-          q = j
-        }
-      }
-    }
-
-    if (maxVal < epsilon) {
-      break
-    }
-
-    const app = mat[p]![p] ?? 0
-    const aqq = mat[q]![q] ?? 0
-    const apq = mat[p]![q] ?? 0
-
-    if (apq === 0) {
-      continue
-    }
-
-    const tau = (aqq - app) / (2 * apq)
-    const sign = tau >= 0 ? 1 : -1
-    const t = sign / (Math.abs(tau) + Math.sqrt(1 + tau * tau))
-    const c = 1 / Math.sqrt(1 + t * t)
-    const s = t * c
-
-    for (let k = 0; k < n; k++) {
-      if (k === p || k === q) {
-        continue
-      }
-      const akp = mat[k]![p] ?? 0
-      const akq = mat[k]![q] ?? 0
-      const newKp = c * akp - s * akq
-      const newKq = c * akq + s * akp
-      mat[k]![p] = newKp
-      mat[p]![k] = newKp
-      mat[k]![q] = newKq
-      mat[q]![k] = newKq
-    }
-
-    mat[p]![p] = c * c * app - 2 * s * c * apq + s * s * aqq
-    mat[q]![q] = s * s * app + 2 * s * c * apq + c * c * aqq
-    mat[p]![q] = 0
-    mat[q]![p] = 0
-
-    for (let k = 0; k < n; k++) {
-      const vkp = vectors[k]![p] ?? 0
-      const vkq = vectors[k]![q] ?? 0
-      vectors[k]![p] = c * vkp - s * vkq
-      vectors[k]![q] = s * vkp + c * vkq
-    }
-  }
-
-  const values = mat.map((row, i) => row[i] ?? 0)
-  const order = values
+  const order = rawValues
     .map((_, i) => i)
-    .sort((left, right) => values[left]! - values[right]!)
+    .sort((left, right) => rawValues[left]! - rawValues[right]!)
 
   return {
-    values: order.map((index) => values[index] ?? 0),
-    vectors: order.map((index) => vectors.map((row) => row[index] ?? 0)),
+    values: order.map((index) => rawValues[index]!),
+    vectors: order.map((index) => rawVectors.map((row) => row[index] ?? 0)),
   }
 }
 

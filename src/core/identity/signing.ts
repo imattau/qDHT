@@ -1,17 +1,13 @@
 import { finalizeEvent, getEventHash, verifyEvent as verifyNostrEvent } from 'nostr-tools/pure'
+import { hexToBytes as nobleHexToBytes } from '@noble/hashes/utils.js'
 import { type QDHTAnnouncement } from '../protocol/announcement.js'
 import { type NostrEvent, type SignedNostrEvent } from '../nostr/event.js'
 
 function hexToBytes(hex: string): Uint8Array {
-  if (hex.length !== 64 || !/^[0-9a-f]+$/i.test(hex)) {
+  if (hex.length !== 64) {
     throw new Error(`privkey must be 64 hex chars, got ${hex.length}`)
   }
-
-  const bytes = new Uint8Array(32)
-  for (let index = 0; index < bytes.length; index++) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16)
-  }
-  return bytes
+  return nobleHexToBytes(hex)
 }
 
 export function eventId(event: NostrEvent): string {
