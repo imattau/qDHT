@@ -9,3 +9,4 @@ yarn-debug.log*
 yarn-error.log*
 coverage/
 *.tsbuildinfo
+PHASE5_AUDIT_REPORT.md
