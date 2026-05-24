@@ -98,6 +98,32 @@ npm run node:start
 - `npm run bench:dht` compare qDHT against the libp2p Kad-DHT baseline
 - `npm run stress:quic` run the QUIC live-node stress harness
 
+## Deploying to a Remote Server
+
+Build the compiled output, then run the deploy script (requires `node`, `npm`, `git`, `rsync`, `systemctl`):
+
+```bash
+# First install
+scripts/deploy.sh install --domain qdht.example.com
+
+# Pull latest and restart
+scripts/deploy.sh update
+
+# Smoke-test a running node
+scripts/deploy.sh test
+```
+
+The script auto-detects Caddy or nginx for reverse proxy setup. Use `--proxy none` to skip.
+
+Environment overrides: `QDHT_DOMAIN`, `QDHT_PORT`, `QDHT_PROXY`, `QDHT_DRY_RUN`.
+
+To build compiled JS locally without deploying:
+
+```bash
+npm run build:dist   # emits to dist/
+```
+
+
 ## Documentation Map
 
 - [`src/core/README.md`](src/core/README.md)
