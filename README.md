@@ -159,7 +159,7 @@ The repo currently includes:
 - simulation coverage for stable, churn, spam, swarming, and baseline cases
 - a live node with CLI, WebSocket, relay, and QUIC transports
 - a browser dashboard served from the live node when `webPort` is configured
-- a shared `qdht.sqlite` file for content indexing and Nostr event persistence
+- a shared `qdht.sqlite` file with normalized tables for kinds, identities, events, tags, route references, and content indexes
 - content-provider and reachability examples
 - benchmark and stress harnesses
 
@@ -173,6 +173,8 @@ Identity-to-route resolution lives in `src/core/discovery/reachability.ts`. When
 4. Returns a `ResolvedRoute` with `bestEndpoint`, optional `fallback`, and a `nat.typeEstimate` field.
 
 Peers also emit observed-address events so each node learns its own externally-visible address without a STUN server. The reachability layer uses those reflections to set `typeEstimate` to one of `open`, `cone`, `symmetric`, or `unknown`.
+
+Regular nodes also ingest `30181` service records and may auto-connect to the advertised endpoint when the peer discovery policy allows it. Bootstrap nodes still cache and fan out service records, but they do not auto-dial peers.
 
 ## Graph Computation Layer
 
@@ -195,13 +197,17 @@ This runs as ordinary floating-point matrix math. There is no quantum hardware i
 All persistence goes into a single SQLite file (`qdht.sqlite`) under `dataDir`. Two modules manage it:
 
 - `src/core/storage/sqlite-node-storage.ts` — the raw SQLite adapter. Tables include:
-  - `nostr_events` — all signed events by id, kind, pubkey, created_at, and raw JSON
-  - `event_tags` — flattened tag index for fast `qkey`, `hash`, `name`, `mime`, and `r` lookups
-  - `route_announcements` — parsed route records keyed by identity with endpoint and NAT fields
-  - `observed_addresses` — peer-reflected address records
+  - `kinds` — catalog of known Nostr/qDHT event kinds
+  - `identities` — deduplicated pubkeys
+  - `events` — signed event headers linked to identities and kinds
+  - `tag_keys` — deduplicated Nostr tag names
+  - `event_tags` — flattened tag values linked to tag keys
+  - `event_identity_refs` — secondary identity references for route, request, and observed-address events
+  - `content_index` — content metadata by `qkey` and `hash`
+  - `content_piece_hashes` — one row per piece hash for a stored content item
 - `src/core/storage/content-repository.ts` — content index on top of the event store. Tracks content locations by `qkey` and `hash`, piece manifests, and replica records. Returns `ContentLocation` objects with piece counts, piece size, and optional source URL.
 
-The event store is append-only for Nostr events. Route announcements are upserted by `(identity, sequence)` so only the latest survives.
+The event store is append-only for Nostr events. Route and reachability records are stored as signed events and resolved through the normalized event tables. Service records are also used for peer discovery: when a regular node receives a valid `30181` record and the peer discovery policy approves it, the node will auto-connect to that advertised endpoint.
 
 ## Examples
 

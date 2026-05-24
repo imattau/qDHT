@@ -19,6 +19,7 @@ The live qDHT node runtime.
 The live node stores its SQLite-backed index and event history in a single `qdht.sqlite` file under `dataDir`.
 When enabled, the web frontend is served from the same node process on the configured `webPort`.
 If either the node listen port or the web port is already in use, qDHT now increments to the next free port and reports the actual bound port at startup.
+Regular nodes also auto-connect to advertised `30181` service records when the peer discovery policy approves the endpoint. Bootstrap nodes intentionally skip that dialing step so they remain rendezvous-only peers.
 
 ## CLI
 
@@ -48,6 +49,7 @@ The node composes:
 ## Notes
 
 The node is built to be additive. WebSocket, relay, and QUIC transports can coexist.
+Bootstrap mode is a special case: it caches and fans out service records, but it does not initiate peer dials from them.
 
 ## Sync Manager: Event Routing Flow
 
