@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>qDHT Node</title>
+    <meta name="color-scheme" content="dark" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="noise"></div>
+    <main class="shell">
+      <section class="hero panel">
+        <div class="eyebrow">qDHT web node</div>
+        <div class="hero-grid">
+          <div>
+            <h1>Discovery, routing, and content control from the browser.</h1>
+            <p class="lede">
+              Publish content, inspect peers, resolve identities, and fetch local content
+              through the live node without leaving the browser.
+            </p>
+          </div>
+          <div class="status-stack">
+            <div class="status-chip">
+              <span>Pubkey</span>
+              <strong id="status-pubkey" class="key-text">loading…</strong>
+            </div>
+            <div class="status-chip">
+              <span>Web UI</span>
+              <strong id="status-web">starting…</strong>
+            </div>
+            <div class="status-chip">
+              <span>Peers</span>
+              <strong id="status-peers">0</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid">
+        <article class="panel card">
+          <header>
+            <div class="eyebrow">Node status</div>
+            <h2>Runtime snapshot</h2>
+          </header>
+          <dl class="stats" id="status-stats"></dl>
+        </article>
+
+        <article class="panel card">
+          <header>
+            <div class="eyebrow">Publish</div>
+            <h2>Store and announce a file</h2>
+          </header>
+          <form id="put-form" class="stack">
+            <label>
+              <span>File</span>
+              <input id="put-file" type="file" required />
+            </label>
+            <div class="two-up">
+              <label>
+                <span>Name</span>
+                <input id="put-name" type="text" placeholder="guide.pdf" />
+              </label>
+              <label>
+                <span>TTL seconds</span>
+                <input id="put-ttl" type="number" min="1" step="1" value="86400" />
+              </label>
+            </div>
+            <label>
+              <span>MIME type</span>
+              <input id="put-mime" type="text" placeholder="application/pdf" />
+            </label>
+            <button type="submit">Publish</button>
+          </form>
+        </article>
+
+        <article class="panel card">
+          <header>
+            <div class="eyebrow">Search</div>
+            <h2>Find identities or metadata</h2>
+          </header>
+          <form id="search-form" class="stack">
+            <label>
+              <span>Query</span>
+              <input id="search-query" type="text" placeholder="npub..., hash, file name, tag" required />
+            </label>
+            <div class="two-up">
+              <label>
+                <span>Type</span>
+                <select id="search-type">
+                  <option value="identity">Identity</option>
+                  <option value="content" selected>Content</option>
+                  <option value="route">Route</option>
+                  <option value="replica">Replica</option>
+                </select>
+              </label>
+              <label>
+                <span>Limit</span>
+                <input id="search-limit" type="number" min="1" step="1" value="25" />
+              </label>
+            </div>
+            <button type="submit">Search</button>
+          </form>
+        </article>
+
+        <article class="panel card">
+          <header>
+            <div class="eyebrow">Fetch</div>
+            <h2>Retrieve a stored content key</h2>
+          </header>
+          <form id="fetch-form" class="stack">
+            <label>
+              <span>qkey</span>
+              <input id="fetch-key" type="text" placeholder="64 hex chars" required />
+            </label>
+            <button type="submit">Fetch</button>
+          </form>
+        </article>
+      </section>
+
+      <section class="grid wide">
+        <article class="panel card">
+          <header>
+            <div class="eyebrow">Peers</div>
+            <h2>Connected transports</h2>
+          </header>
+          <div id="peers" class="list"></div>
+        </article>
+
+        <article class="panel card output">
+          <header>
+            <div class="eyebrow">Output</div>
+            <h2>Search and fetch results</h2>
+          </header>
+          <div id="output" class="output-body">
+            <p class="muted">Run a search, publish a file, or fetch a key to populate this panel.</p>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

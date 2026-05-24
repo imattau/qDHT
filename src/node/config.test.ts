@@ -23,6 +23,7 @@ describe('loadConfig', () => {
       nip96Servers: ['https://nip96.example.com/upload'],
       quicPeers: ['quic://localhost:8888'],
       quicListenPort: 8888,
+      webPort: 8080,
       port: 7777,
       dataDir: tmpDir,
     }
@@ -35,6 +36,7 @@ describe('loadConfig', () => {
     expect(loaded.nip96Servers).toEqual(['https://nip96.example.com/upload'])
     expect(loaded.quicPeers).toEqual(['quic://localhost:8888'])
     expect(loaded.quicListenPort).toBe(8888)
+    expect(loaded.webPort).toBe(8080)
   })
 
   it('throws on missing identity.privkey', async () => {
@@ -82,6 +84,12 @@ describe('loadConfig', () => {
     const bad = { identity: { privkey: '1'.repeat(64) }, peers: [], quicListenPort: 'abc', port: 7777, dataDir: tmpDir }
     await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
     await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('quicListenPort')
+  })
+
+  it('throws on invalid webPort', async () => {
+    const bad = { identity: { privkey: '2'.repeat(64) }, peers: [], webPort: 'abc', port: 7777, dataDir: tmpDir }
+    await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
+    await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('webPort')
   })
 })
 

@@ -7,6 +7,7 @@
     "build": "tsc --noEmit",
     "node:build": "tsc --noEmit",
     "node:start": "tsx bin/qdht-node.ts start",
+    "web:start": "tsx bin/qdht-node.ts start --web-port 3000",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench:dht": "tsx src/bench/dht-benchmark.ts",
@@ -27,7 +28,7 @@
     "@types/node": "^22.15.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.22.3",
-    "typescript": "^5.4.0",
+    "typescript": "^5.9.3",
     "vitest": "^1.6.0"
   },
   "dependencies": {

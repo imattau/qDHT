@@ -10,6 +10,7 @@ import {
   buildRouteAnnouncement,
   parseObservedAddressEvent,
   ReachabilityDirectory,
+  type ObservedAddressReport,
   resolveRouteAnnouncement,
   signRouteAnnouncement,
 } from './reachability.js'
@@ -192,7 +193,7 @@ describe('reachability routing', () => {
     },
   ])('classifies NAT as $expectedNat for $name', ({ reports, expectedNat }) => {
     const subject = 'a'.repeat(64)
-    const route = buildRouteAnnouncement(subject, reports)
+    const route = buildRouteAnnouncement(subject, reports as ObservedAddressReport[])
     expect(route.nat.typeEstimate).toBe(expectedNat)
   })
 

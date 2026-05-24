@@ -14,8 +14,11 @@ The live qDHT node runtime.
 - `piece-fetcher-service.ts` fetches content pieces from providers
 - `transport.ts` defines the transport interface
 - `quic-stress.ts` runs a live QUIC stress harness
+- `web-server.ts` serves the browser dashboard and JSON API when `webPort` is configured
 
 The live node stores its SQLite-backed index and event history in a single `qdht.sqlite` file under `dataDir`.
+When enabled, the web frontend is served from the same node process on the configured `webPort`.
+If either the node listen port or the web port is already in use, qDHT now increments to the next free port and reports the actual bound port at startup.
 
 ## CLI
 
@@ -29,6 +32,7 @@ Supported commands:
 - `peers`
 - `replicas`
 - `search`
+- browser dashboard served from `web/`
 
 ## Runtime model
 
@@ -39,6 +43,7 @@ The node composes:
 - one or more transports
 - route discovery for identity-based dialing
 - metadata search via request announcements
+- browser control panel for status, search, publishing, and fetch operations
 
 ## Notes
 

@@ -12,6 +12,7 @@ The main live-node CLI. It can:
 - list peers
 - list replicas
 - search identity routes and metadata
+- serve the browser dashboard when `--web-port <port>` is set on `start`
 
 ## Usage
 

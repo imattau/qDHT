@@ -49,6 +49,7 @@ function safeJsonParse(data: RawData): unknown | null {
 
 export class PeerManager implements Transport {
   private server: WebSocketServer | null = null
+  private listeningPort: number | null = null
   private peerMap = new Map<string, ConnectedPeer>()
   private urlToPeerId = new Map<string, string>()
   private outboundState = new Map<string, { delayMs: number; timer: ReturnType<typeof setTimeout> | null; active: boolean }>()
@@ -62,25 +63,52 @@ export class PeerManager implements Transport {
 
   constructor(private opts: PeerManagerOptions) {}
 
-  async listen(): Promise<void> {
+  async listen(): Promise<number> {
     if (this.server) {
-      return
+      return this.listeningPort ?? this.opts.port
     }
 
-    await new Promise<void>((resolve, reject) => {
-      const server = new WebSocketServer({ port: this.opts.port })
-      this.server = server
+    const startPort = this.opts.port
+    const maxPort = 65535
 
-      server.once('listening', () => {
-        this.startPingLoop()
-        resolve()
+    for (let port = startPort; port <= maxPort; port += 1) {
+      const attempt = await new Promise<{ server: WebSocketServer; port: number } | null>((resolve, reject) => {
+        const server = new WebSocketServer({ port })
+        const cleanup = (): void => {
+          server.removeAllListeners('listening')
+          server.removeAllListeners('error')
+        }
+        server.once('listening', () => {
+          cleanup()
+          resolve({ server, port })
+        })
+        server.once('error', (err: NodeJS.ErrnoException) => {
+          cleanup()
+          server.close(() => {
+            if (err.code === 'EADDRINUSE') {
+              resolve(null)
+              return
+            }
+            reject(err)
+          })
+        })
+        server.on('connection', (ws, req) => {
+          const url = `ws://${req.socket.remoteAddress ?? '127.0.0.1'}:${req.socket.remotePort ?? port}`
+          this.attachPeer(ws, url, false)
+        })
       })
-      server.once('error', reject)
-      server.on('connection', (ws, req) => {
-        const url = `ws://${req.socket.remoteAddress ?? '127.0.0.1'}:${req.socket.remotePort ?? this.opts.port}`
-        this.attachPeer(ws, url, false)
-      })
-    })
+
+      if (!attempt) {
+        continue
+      }
+
+      this.server = attempt.server
+      this.listeningPort = attempt.port
+      this.startPingLoop()
+      return attempt.port
+    }
+
+    throw new Error(`Unable to bind WebSocket listener starting at port ${startPort}`)
   }
 
   connect(url: string): void {
@@ -190,6 +218,7 @@ export class PeerManager implements Transport {
     this.peerMap.clear()
     this.urlToPeerId.clear()
     this.outboundState.clear()
+    this.listeningPort = null
 
     await new Promise<void>((resolve) => {
       if (!this.server) {
@@ -199,6 +228,10 @@ export class PeerManager implements Transport {
       this.server.close(() => resolve())
       this.server = null
     })
+  }
+
+  port(): number | null {
+    return this.listeningPort
   }
 
   private attachPeer(ws: WebSocket, url: string, outbound: boolean): ConnectedPeer {

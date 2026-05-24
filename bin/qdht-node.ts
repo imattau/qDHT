@@ -24,6 +24,7 @@ async function loadNodeConfig(
   if (overrides.port !== undefined) config.port = overrides.port
   if (overrides.peers !== undefined) config.peers = overrides.peers
   if (overrides.relays !== undefined) config.relays = overrides.relays
+  if (overrides.webPort !== undefined) config.webPort = overrides.webPort
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
   return config
 }
@@ -117,10 +118,12 @@ program
   .description('Start the qDHT node daemon')
   .option('--config <path>', 'Config file path', DEFAULT_CONFIG_PATH)
   .option('--port <port>', 'Override listen port', (value) => Number(value))
+  .option('--web-port <port>', 'Override web UI port', (value) => Number(value))
   .option('--data-dir <dir>', 'Override data directory')
-  .action(async (opts: { config: string; port?: number; dataDir?: string }) => {
+  .action(async (opts: { config: string; port?: number; webPort?: number; dataDir?: string }) => {
     const config = await loadNodeConfig(opts.config, {
       port: opts.port,
+      webPort: opts.webPort,
       dataDir: opts.dataDir,
     })
     const node = new QDHTNode(config)
@@ -128,8 +131,11 @@ program
 
     console.log(`qdht-node started`)
     console.log(`  pubkey : ${node.pubkey()}`)
-    console.log(`  port   : ${config.port}`)
+    console.log(`  port   : ${node.listenPort()}`)
     console.log(`  dataDir: ${config.dataDir}`)
+    if (node.webPort() !== null) {
+      console.log(`  web    : http://127.0.0.1:${node.webPort()}`)
+    }
 
     process.on('SIGINT', async () => {
       await node.stop()

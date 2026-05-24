@@ -23,6 +23,7 @@ It is organized around a few bounded layers:
 
 - `src/core` for protocol, identity, graph, discovery, and content primitives
 - `src/node` for the live node runtime, CLI, transports, and persistence
+- `web` for the browser dashboard served by the live node
 - `src/sim` for the simulation harness and comparison scenarios
 - `src/bench` for qDHT vs baseline benchmark runs
 - `examples` for runnable demos
@@ -89,6 +90,8 @@ npm run node:start
 ## Common Commands
 
 - `npm run node:start` start the daemon
+- `npm run node:start -- --web-port 3000` start the daemon with the web dashboard enabled
+- `npm run web:start` start the daemon with the web dashboard on port 3000
 - `npm run example:hello` run the simplest publish/get demo
 - `npm run example:reachability` run the DNS-less identity-to-route demo
 - `npm run example:spam` run the spam-filter comparison demo
@@ -103,6 +106,7 @@ npm run node:start
 - [`src/bench/README.md`](src/bench/README.md)
 - [`bin/README.md`](bin/README.md)
 - [`examples/README.md`](examples/README.md)
+- [`web/README.md`](web/README.md)
 
 ## Core Concepts
 
@@ -122,6 +126,7 @@ The repo currently includes:
 
 - simulation coverage for stable, churn, spam, swarming, and baseline cases
 - a live node with CLI, WebSocket, relay, and QUIC transports
+- a browser dashboard served from the live node when `webPort` is configured
 - a shared `qdht.sqlite` file for content indexing and Nostr event persistence
 - content-provider and reachability examples
 - benchmark and stress harnesses

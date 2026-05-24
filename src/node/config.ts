@@ -9,6 +9,7 @@ export interface QDHTConfig {
   nip96Servers?: string[]
   quicPeers?: string[]
   quicListenPort?: number
+  webPort?: number
   port: number
   dataDir: string
 }
@@ -20,6 +21,7 @@ export interface ConfigOverrides {
   nip96Servers?: string[]
   quicPeers?: string[]
   quicListenPort?: number
+  webPort?: number
   dataDir?: string
 }
 
@@ -69,6 +71,11 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     throw new Error('Config quicListenPort must be a number')
   }
 
+  const webPort = candidate.webPort
+  if (webPort !== undefined && (typeof webPort !== 'number' || !Number.isFinite(webPort))) {
+    throw new Error('Config webPort must be a number')
+  }
+
   const port = candidate.port
   if (typeof port !== 'number' || !Number.isFinite(port)) {
     throw new Error('Config missing port')
@@ -86,6 +93,7 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     nip96Servers,
     quicPeers,
     quicListenPort,
+    webPort,
     port,
     dataDir,
   }
@@ -100,6 +108,7 @@ export async function loadConfig(configPath: string, overrides: ConfigOverrides 
   if (overrides.nip96Servers !== undefined) config.nip96Servers = overrides.nip96Servers
   if (overrides.quicPeers !== undefined) config.quicPeers = overrides.quicPeers
   if (overrides.quicListenPort !== undefined) config.quicListenPort = overrides.quicListenPort
+  if (overrides.webPort !== undefined) config.webPort = overrides.webPort
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
   return config
 }

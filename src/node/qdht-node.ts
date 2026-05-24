@@ -17,6 +17,7 @@ import { PeerManager } from './peer-manager.js'
 import { RelayAdapter } from './relay-adapter.js'
 import { QuicAdapter } from './quic-adapter.js'
 import { SyncManager } from './sync-manager.js'
+import { NodeWebServer } from './web-server.js'
 import type { QDHTRequestPayload, QDHTRequestResponsePayload } from '../core/protocol/request.js'
 import type { NodeStorage } from '../core/storage/node-storage.js'
 import { SqliteNodeStorage } from '../core/storage/sqlite-node-storage.js'
@@ -86,6 +87,7 @@ export class QDHTNode {
   private relayAdapter: RelayAdapter | null = null
   private quicAdapter: QuicAdapter | null = null
   private rpcServer: NetServer | null = null
+  private webServer: NodeWebServer | null = null
   private graph: GraphState
   private propagator: Propagator
   private neighbourState: NeighbourStateMap
@@ -155,6 +157,10 @@ export class QDHTNode {
       this.neighbourState,
       this.reputationMap,
     )
+
+    if (config.webPort !== undefined) {
+      this.webServer = new NodeWebServer(this, config.webPort)
+    }
   }
 
   async start(): Promise<void> {
@@ -166,9 +172,11 @@ export class QDHTNode {
     await this.peerManager.listen()
     await this.connect()
     await this.startRpc()
+    await this.webServer?.start()
   }
 
   async stop(): Promise<void> {
+    await this.webServer?.close()
     await this.disconnect()
     this.storage.close()
     this.syncManager.close()
@@ -265,7 +273,18 @@ export class QDHTNode {
   }
 
   peerCount(): number {
-    return this.peerManager.peers().length + (this.quicAdapter?.peers().length ?? 0)
+    return this.listPeers().length
+  }
+
+  listPeers(): PeerInfo[] {
+    const wsPeers = this.peerManager.peers()
+    const quicPeers = this.quicAdapter?.peers().map((peer) => ({
+      pubkey: peer.peerId,
+      url: peer.address,
+      latencyMs: peer.latencyMs,
+      connectedAt: peer.connectedAt,
+    })) ?? []
+    return [...wsPeers, ...quicPeers]
   }
 
   hasReceivedKey(qkey: string): boolean {
@@ -281,6 +300,52 @@ export class QDHTNode {
     mime?: string
   } | null {
     return this.syncManager.getAnnouncementInfo(qkey)
+  }
+
+  status(): {
+    pubkey: string
+    port: number
+    dataDir: string
+    peerCount: number
+    peers: PeerInfo[]
+  } {
+    const peers = this.listPeers()
+    return {
+      pubkey: this.pubkey(),
+      port: this.peerManager.port() ?? this.config.port,
+      dataDir: this.config.dataDir,
+      peerCount: peers.length,
+      peers,
+    }
+  }
+
+  listenPort(): number {
+    return this.peerManager.port() ?? this.config.port
+  }
+
+  webPort(): number | null {
+    return this.webServer?.port() ?? null
+  }
+
+  async listReplicas(key: string): Promise<ReplicaInfo[]> {
+    const [index, state] = await Promise.all([this.contentStore.getIndex(), Promise.resolve(this.neighbourState.get(key))])
+    if (!state) {
+      return []
+    }
+    const totalPieces = index[key]?.totalPieces ?? 0
+    const replicas: ReplicaInfo[] = []
+    for (const [pubkey, neighbour] of state.inbound) {
+      if (!neighbour.hasReplica && neighbour.pieceRanges.length === 0) {
+        continue
+      }
+      replicas.push({
+        pubkey,
+        lastSeen: new Date(neighbour.lastSeen * 1000).toISOString(),
+        pieceCount: neighbour.pieceRanges.reduce((sum: number, [start, end]: [number, number]) => sum + (end - start + 1), 0),
+        totalPieces,
+      })
+    }
+    return replicas
   }
 
   async searchIdentity(identityRef: string, timeoutMs = 2_000): Promise<ResolvedRoute | null> {
@@ -445,30 +510,11 @@ export class QDHTNode {
 
     switch (req.cmd) {
       case 'peers':
-        reply({ peers: this.peerManager.peers() as PeerInfo[] })
+        reply({ peers: this.listPeers() })
         break
       case 'replicas': {
-        Promise.all([this.contentStore.getIndex(), Promise.resolve(this.neighbourState.get(req.key))])
-          .then(([index, state]) => {
-            if (!state) {
-              reply({ replicas: [] })
-              return
-            }
-            const totalPieces = index[req.key]?.totalPieces ?? 0
-            const replicas: ReplicaInfo[] = []
-            for (const [pubkey, neighbour] of state.inbound) {
-              if (!neighbour.hasReplica && neighbour.pieceRanges.length === 0) {
-                continue
-              }
-              replicas.push({
-                pubkey,
-                lastSeen: new Date(neighbour.lastSeen * 1000).toISOString(),
-              pieceCount: neighbour.pieceRanges.reduce((sum: number, [start, end]: [number, number]) => sum + (end - start + 1), 0),
-                totalPieces,
-              })
-            }
-            reply({ replicas })
-          })
+        this.listReplicas(req.key)
+          .then((replicas) => reply({ replicas }))
           .catch(() => reply({ error: 'index error' }))
         break
       }

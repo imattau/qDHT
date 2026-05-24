@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createConnection } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 import { join } from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -47,6 +47,22 @@ async function rpc(sockPath: string, request: unknown): Promise<unknown> {
     })
     conn.on('error', reject)
   })
+}
+
+async function occupyPort(): Promise<{ server: ReturnType<typeof createServer>; port: number }> {
+  const server = createServer()
+  const port = await new Promise<number>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (typeof address === 'object' && address) {
+        resolve(address.port)
+      } else {
+        reject(new Error('failed to bind test port'))
+      }
+    })
+  })
+  return { server, port }
 }
 
 beforeEach(async () => {
@@ -198,5 +214,22 @@ describe('QDHTNode', () => {
     expect(fetched.equals(original)).toBe(true)
     await node.stop()
     node = undefined
+  })
+
+  it('falls back to the next free listen port when the configured port is occupied', async () => {
+    const occupied = await occupyPort()
+    const keypair = generateKeypair()
+    const config: QDHTConfig = {
+      identity: { privkey: keypair.privkey },
+      peers: [],
+      port: occupied.port,
+      dataDir: tmpDir,
+    }
+
+    node = new QDHTNode(config)
+    await node.start()
+
+    expect(node.listenPort()).toBeGreaterThan(occupied.port)
+    await new Promise<void>((resolve) => occupied.server.close(() => resolve()))
   })
 })
