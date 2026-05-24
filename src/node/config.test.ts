@@ -93,6 +93,73 @@ describe('loadConfig', () => {
   })
 })
 
+describe('bootstrapMode and maxPeers', () => {
+  it('accepts bootstrapMode: true without maxPeers', async () => {
+    const cfg = {
+      identity: { privkey: 'a'.repeat(64) },
+      peers: [],
+      port: 7777,
+      dataDir: tmpDir,
+      bootstrapMode: true,
+    }
+    await writeFile(join(tmpDir, 'cfg-bsm.json'), JSON.stringify(cfg))
+    const loaded = await loadConfig(join(tmpDir, 'cfg-bsm.json'))
+    expect(loaded.bootstrapMode).toBe(true)
+    expect(loaded.maxPeers).toBeUndefined()
+  })
+
+  it('accepts maxPeers as a positive integer', async () => {
+    const cfg = {
+      identity: { privkey: 'a'.repeat(64) },
+      peers: [],
+      port: 7777,
+      dataDir: tmpDir,
+      bootstrapMode: true,
+      maxPeers: 500,
+    }
+    await writeFile(join(tmpDir, 'cfg-mp.json'), JSON.stringify(cfg))
+    const loaded = await loadConfig(join(tmpDir, 'cfg-mp.json'))
+    expect(loaded.maxPeers).toBe(500)
+  })
+
+  it('throws on maxPeers: 0', async () => {
+    const cfg = {
+      identity: { privkey: 'a'.repeat(64) },
+      peers: [],
+      port: 7777,
+      dataDir: tmpDir,
+      maxPeers: 0,
+    }
+    await writeFile(join(tmpDir, 'cfg-mp0.json'), JSON.stringify(cfg))
+    await expect(loadConfig(join(tmpDir, 'cfg-mp0.json'))).rejects.toThrow('maxPeers')
+  })
+
+  it('throws on maxPeers: 1.5 (non-integer)', async () => {
+    const cfg = {
+      identity: { privkey: 'a'.repeat(64) },
+      peers: [],
+      port: 7777,
+      dataDir: tmpDir,
+      maxPeers: 1.5,
+    }
+    await writeFile(join(tmpDir, 'cfg-mpf.json'), JSON.stringify(cfg))
+    await expect(loadConfig(join(tmpDir, 'cfg-mpf.json'))).rejects.toThrow('maxPeers')
+  })
+
+  it('applies bootstrapMode override from ConfigOverrides', async () => {
+    const cfg = {
+      identity: { privkey: 'a'.repeat(64) },
+      peers: [],
+      port: 7777,
+      dataDir: tmpDir,
+    }
+    await writeFile(join(tmpDir, 'cfg-bsov.json'), JSON.stringify(cfg))
+    const loaded = await loadConfig(join(tmpDir, 'cfg-bsov.json'), { bootstrapMode: true, maxPeers: 100 })
+    expect(loaded.bootstrapMode).toBe(true)
+    expect(loaded.maxPeers).toBe(100)
+  })
+})
+
 describe('initConfig', () => {
   it('creates config with generated identity if file does not exist', async () => {
     const configPath = join(tmpDir, 'config.json')

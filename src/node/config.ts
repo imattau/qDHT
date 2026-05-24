@@ -12,6 +12,9 @@ export interface QDHTConfig {
   webPort?: number
   port: number
   dataDir: string
+  bootstrapMode?: boolean
+  maxPeers?: number
+  listenAddress?: string
 }
 
 export interface ConfigOverrides {
@@ -23,6 +26,9 @@ export interface ConfigOverrides {
   quicListenPort?: number
   webPort?: number
   dataDir?: string
+  bootstrapMode?: boolean
+  maxPeers?: number
+  listenAddress?: string
 }
 
 function validatePrivkey(privkey: unknown): string {
@@ -86,6 +92,23 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     throw new Error('Config missing dataDir')
   }
 
+  const bootstrapMode = candidate.bootstrapMode
+  if (bootstrapMode !== undefined && typeof bootstrapMode !== 'boolean') {
+    throw new Error('Config bootstrapMode must be a boolean')
+  }
+
+  const maxPeers = candidate.maxPeers
+  if (maxPeers !== undefined) {
+    if (typeof maxPeers !== 'number' || !Number.isInteger(maxPeers) || maxPeers <= 0) {
+      throw new Error('Config maxPeers must be a positive integer')
+    }
+  }
+
+  const listenAddress = candidate.listenAddress
+  if (listenAddress !== undefined && typeof listenAddress !== 'string') {
+    throw new Error('Config listenAddress must be a string')
+  }
+
   return {
     identity: { privkey: validatePrivkey((identity as Record<string, unknown>).privkey) },
     peers,
@@ -96,6 +119,9 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     webPort,
     port,
     dataDir,
+    bootstrapMode: bootstrapMode as boolean | undefined,
+    maxPeers: maxPeers as number | undefined,
+    listenAddress: listenAddress as string | undefined,
   }
 }
 
@@ -110,6 +136,9 @@ export async function loadConfig(configPath: string, overrides: ConfigOverrides 
   if (overrides.quicListenPort !== undefined) config.quicListenPort = overrides.quicListenPort
   if (overrides.webPort !== undefined) config.webPort = overrides.webPort
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
+  if (overrides.bootstrapMode !== undefined) config.bootstrapMode = overrides.bootstrapMode
+  if (overrides.maxPeers !== undefined) config.maxPeers = overrides.maxPeers
+  if (overrides.listenAddress !== undefined) config.listenAddress = overrides.listenAddress
   return config
 }
 
