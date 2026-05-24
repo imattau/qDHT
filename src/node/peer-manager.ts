@@ -65,8 +65,13 @@ export class PeerManager implements Transport {
   private transportDisconnectedHandlers: Array<(peerId: string) => void> = []
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private closed = false
+  private advertisedListenAddress?: string
 
   constructor(private opts: PeerManagerOptions) {}
+
+  setListenAddress(listenAddress?: string): void {
+    this.advertisedListenAddress = listenAddress ?? this.opts.listenAddress
+  }
 
   async listen(): Promise<number> {
     if (this.server) {
@@ -303,7 +308,8 @@ export class PeerManager implements Transport {
   }
 
   private sendServiceRecord(peer: ConnectedPeer): void {
-    if (!this.opts.listenAddress) {
+    const listenAddress = this.advertisedListenAddress ?? this.opts.listenAddress
+    if (!listenAddress) {
       return
     }
     const now = Math.floor(Date.now() / 1000)
@@ -315,7 +321,7 @@ export class PeerManager implements Transport {
         tags: [
           ['transport', 'ws'],
           ['d', 'main'],
-          ['url', this.opts.listenAddress],
+          ['url', listenAddress],
         ],
         content: '',
         sig: '',

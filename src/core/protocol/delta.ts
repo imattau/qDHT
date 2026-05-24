@@ -19,6 +19,7 @@ export interface DeltaResponse {
 export interface DeltaResponseContent {
   announcements: string[]
   replicas: string[]
+  routes: string[]
   reputationDeltas: string[]
   expired: string[]
 }
@@ -43,12 +44,14 @@ export function buildDeltaResponse(opts: {
   since: number
   announcements: string[]
   replicas: string[]
+  routes: string[]
   reputationDeltas: string[]
   expired: string[]
 }): DeltaResponse {
   const content: DeltaResponseContent = {
     announcements: opts.announcements,
     replicas: opts.replicas,
+    routes: opts.routes,
     reputationDeltas: opts.reputationDeltas,
     expired: opts.expired,
   }
@@ -60,7 +63,7 @@ export function buildDeltaResponse(opts: {
     tags: [
       ['request', opts.requestId],
       ['since', String(opts.since)],
-      ['count', String(opts.announcements.length + opts.replicas.length)],
+      ['count', String(opts.announcements.length + opts.replicas.length + opts.routes.length)],
     ],
     content: JSON.stringify(content),
     sig: '',

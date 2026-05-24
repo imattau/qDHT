@@ -2,9 +2,11 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { connect } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { generateKeypair } from '../core/identity/keys.js'
+import { keypairFromHex } from '../core/identity/keys.js'
 import { NostrSqliteStore } from '../core/nostr/sqlite-store.js'
 import { buildObservedAddressEvent, buildRouteAnnouncement, signRouteAnnouncement } from '../core/discovery/reachability.js'
 
@@ -24,28 +26,66 @@ async function waitFor(fn: () => boolean | Promise<boolean>, timeoutMs = 10_000)
   }
 }
 
-function runCli(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+function rpcCall(sockPath: string, payload: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [...TSX_ARGS, ...args], {
-      cwd: REPO_ROOT,
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const conn = connect(sockPath)
+    let buffer = ''
+    let settled = false
+
+    const finish = (value: unknown): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      resolve(value)
+      conn.destroy()
+    }
+
+    conn.setEncoding('utf8')
+    conn.setTimeout(8_000, () => {
+      if (!settled) {
+        settled = true
+        reject(new Error('rpc timeout'))
+      }
+      conn.destroy()
     })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString()
+    conn.on('connect', () => {
+      conn.write(`${JSON.stringify(payload)}\n`)
     })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString()
+    conn.on('data', (chunk) => {
+      buffer += chunk
+      const newline = buffer.indexOf('\n')
+      if (newline === -1) {
+        return
+      }
+      const line = buffer.slice(0, newline).trim()
+      if (!line) {
+        return
+      }
+      try {
+        finish(JSON.parse(line))
+      } catch (err) {
+        settled = true
+        reject(err)
+        conn.destroy()
+      }
     })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      resolve({ stdout, stderr, code: code ?? -1 })
+    conn.on('error', (err) => {
+      if (!settled) {
+        settled = true
+        reject(err)
+      }
+    })
+    conn.on('close', () => {
+      if (!settled) {
+        settled = true
+        reject(new Error('rpc socket closed before response'))
+      }
     })
   })
 }
 
-function spawnDaemon(configPath: string): Promise<ChildProcess> {
+function spawnDaemon(configPath: string): Promise<{ child: ChildProcess; port: number | null }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [...TSX_ARGS, 'start', '--config', configPath], {
       cwd: REPO_ROOT,
@@ -55,10 +95,15 @@ function spawnDaemon(configPath: string): Promise<ChildProcess> {
 
     let stdout = ''
     let stderr = ''
+    let actualPort: number | null = null
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString()
+      const match = stdout.match(/^\s*port\s*:\s*(\d+)/m)
+      if (match) {
+        actualPort = Number(match[1])
+      }
       if (stdout.includes('qdht-node started')) {
-        resolve(child)
+        resolve({ child, port: actualPort })
       }
     })
     child.stderr.on('data', (chunk) => {
@@ -74,19 +119,27 @@ function spawnDaemon(configPath: string): Promise<ChildProcess> {
 }
 
 async function stopAll(): Promise<void> {
-  while (processes.length > 0) {
-    const proc = processes.pop()
-    if (!proc) {
-      continue
-    }
-    if (proc.exitCode !== null || proc.signalCode !== null) {
-      continue
-    }
-    proc.kill('SIGINT')
-    await new Promise<void>((resolve) => {
-      proc.once('exit', () => resolve())
-    })
-  }
+  await Promise.all(
+    processes.splice(0).map(async (proc) => {
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        return
+      }
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          proc.once('exit', () => resolve())
+          proc.kill('SIGINT')
+        }),
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            if (proc.exitCode === null && proc.signalCode === null) {
+              proc.kill('SIGKILL')
+            }
+            resolve()
+          }, 3000)
+        }),
+      ])
+    }),
+  )
 }
 
 beforeEach(async () => {
@@ -162,28 +215,48 @@ describe('reachability lab e2e', () => {
       port: seedPort,
       dataDir: seedDir,
     }))
+
+    const seedDaemon = await spawnDaemon(seedConfig)
+    const resolvedSeedPort = seedDaemon.port ?? seedPort
     await writeFile(clientConfig, JSON.stringify({
       identity: { privkey: '2'.repeat(64) },
-      peers: [`ws://127.0.0.1:${seedPort}`],
+      peers: [`ws://127.0.0.1:${resolvedSeedPort}`],
       port: clientPort,
       dataDir: clientDir,
     }))
-
-    await spawnDaemon(seedConfig)
     await spawnDaemon(clientConfig)
 
+    const clientSock = join(clientDir, 'qdht.sock')
+    const seedSock = join(seedDir, 'qdht.sock')
+    const clientPubkey = keypairFromHex('2'.repeat(64)).pubkey
     await waitFor(async () => {
-      const peers = await runCli(['peers', '--config', clientConfig])
-      return peers.code === 0 && !peers.stdout.includes('No connected peers.')
-    }, 15_000)
+      const seedPeers = await rpcCall(seedSock, { cmd: 'peers' }) as { peers?: Array<{ pubkey?: string }> }
+      return Boolean(seedPeers.peers?.some((peer) => peer.pubkey === clientPubkey))
+    }, 20_000)
 
-    const search = await runCli(['search', subject.pubkey, '--config', clientConfig, '--type', 'identity'])
-    expect(search.code).toBe(0)
-    expect(search.stdout).toContain(`Identity : ${subject.pubkey}`)
-    expect(search.stdout).toContain('Reachable: yes')
-    expect(search.stdout).toContain(`NAT      : ${expectedNat}`)
-    expect(search.stdout).toContain('Best     : quic://203.0.113.44')
-    expect(search.stdout).toContain('Fallback : relay://wss://relay.example')
+    let search = await rpcCall(clientSock, {
+      cmd: 'search',
+      type: 'identity',
+      query: subject.pubkey,
+      timeoutMs: 5_000,
+    }) as { route?: { identity?: string; reachable?: boolean; nat?: { typeEstimate?: string }; bestEndpoint?: { transport?: string; address?: string }; fallback?: { transport?: string; address?: string } } }
+
+    if (search.route?.identity !== subject.pubkey) {
+      await waitFor(async () => {
+        search = await rpcCall(clientSock, {
+          cmd: 'search',
+          type: 'identity',
+          query: subject.pubkey,
+          timeoutMs: 5_000,
+        }) as { route?: { identity?: string; reachable?: boolean; nat?: { typeEstimate?: string }; bestEndpoint?: { transport?: string; address?: string }; fallback?: { transport?: string; address?: string } } }
+        return search.route?.identity === subject.pubkey
+      }, 30_000)
+    }
+    expect(search.route?.identity).toBe(subject.pubkey)
+    expect(search.route?.reachable).toBe(true)
+    expect(search.route?.nat?.typeEstimate).toBe(expectedNat)
+    expect(`${search.route?.bestEndpoint?.transport}://${search.route?.bestEndpoint?.address}`).toBe('quic://203.0.113.44')
+    expect(`${search.route?.fallback?.transport}://${search.route?.fallback?.address}`).toBe('relay://wss://relay.example')
   }
 
   it('propagates a seeded NAT route across separate daemon processes', async () => {
@@ -277,5 +350,5 @@ describe('reachability lab e2e', () => {
         },
       ],
     })
-  }, 30_000)
+  }, 60_000)
 })

@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { bytesToHex } from '@noble/hashes/utils.js'
+import { nip19 } from 'nostr-tools'
 import { generateKeypair } from '../core/identity/keys.js'
 
 export interface QDHTConfig {
@@ -9,6 +11,8 @@ export interface QDHTConfig {
   nip96Servers?: string[]
   quicPeers?: string[]
   quicListenPort?: number
+  localDiscovery?: boolean
+  localDiscoveryPort?: number
   webPort?: number
   port: number
   dataDir: string
@@ -24,6 +28,8 @@ export interface ConfigOverrides {
   nip96Servers?: string[]
   quicPeers?: string[]
   quicListenPort?: number
+  localDiscovery?: boolean
+  localDiscoveryPort?: number
   webPort?: number
   dataDir?: string
   bootstrapMode?: boolean
@@ -39,6 +45,49 @@ function validatePrivkey(privkey: unknown): string {
     throw new Error('identity.privkey must be 64 hex chars')
   }
   return privkey.toLowerCase()
+}
+
+export function privkeyFromNsec(nsec: string): string {
+  const decoded = nip19.decode(nsec)
+  if (decoded.type !== 'nsec' || !(decoded.data instanceof Uint8Array)) {
+    throw new Error('nsec must decode to a private key')
+  }
+  return validatePrivkey(bytesToHex(decoded.data))
+}
+
+export function generateSessionIdentity(): { privkey: string; nsec: string } {
+  const keypair = generateKeypair()
+  return {
+    privkey: keypair.privkey,
+    nsec: nip19.nsecEncode(Buffer.from(keypair.privkey, 'hex')),
+  }
+}
+
+export function buildDefaultConfig(identityPrivkey: string, dataDir: string): QDHTConfig {
+  return {
+    identity: { privkey: validatePrivkey(identityPrivkey) },
+    peers: [],
+    quicPeers: [],
+    port: 7777,
+    dataDir,
+  }
+}
+
+function applyOverrides(config: QDHTConfig, overrides: ConfigOverrides): QDHTConfig {
+  if (overrides.port !== undefined) config.port = overrides.port
+  if (overrides.peers !== undefined) config.peers = overrides.peers
+  if (overrides.relays !== undefined) config.relays = overrides.relays
+  if (overrides.nip96Servers !== undefined) config.nip96Servers = overrides.nip96Servers
+  if (overrides.quicPeers !== undefined) config.quicPeers = overrides.quicPeers
+  if (overrides.quicListenPort !== undefined) config.quicListenPort = overrides.quicListenPort
+  if (overrides.localDiscovery !== undefined) config.localDiscovery = overrides.localDiscovery
+  if (overrides.localDiscoveryPort !== undefined) config.localDiscoveryPort = overrides.localDiscoveryPort
+  if (overrides.webPort !== undefined) config.webPort = overrides.webPort
+  if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
+  if (overrides.bootstrapMode !== undefined) config.bootstrapMode = overrides.bootstrapMode
+  if (overrides.maxPeers !== undefined) config.maxPeers = overrides.maxPeers
+  if (overrides.listenAddress !== undefined) config.listenAddress = overrides.listenAddress
+  return config
 }
 
 export function validateConfig(raw: unknown, path: string): QDHTConfig {
@@ -75,6 +124,16 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
   const quicListenPort = candidate.quicListenPort
   if (quicListenPort !== undefined && (typeof quicListenPort !== 'number' || !Number.isFinite(quicListenPort))) {
     throw new Error('Config quicListenPort must be a number')
+  }
+
+  const localDiscovery = candidate.localDiscovery
+  if (localDiscovery !== undefined && typeof localDiscovery !== 'boolean') {
+    throw new Error('Config localDiscovery must be a boolean')
+  }
+
+  const localDiscoveryPort = candidate.localDiscoveryPort
+  if (localDiscoveryPort !== undefined && (typeof localDiscoveryPort !== 'number' || !Number.isFinite(localDiscoveryPort))) {
+    throw new Error('Config localDiscoveryPort must be a number')
   }
 
   const webPort = candidate.webPort
@@ -116,6 +175,8 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
     nip96Servers,
     quicPeers,
     quicListenPort,
+    localDiscovery: localDiscovery as boolean | undefined,
+    localDiscoveryPort: localDiscoveryPort as number | undefined,
     webPort,
     port,
     dataDir,
@@ -128,18 +189,7 @@ export function validateConfig(raw: unknown, path: string): QDHTConfig {
 export async function loadConfig(configPath: string, overrides: ConfigOverrides = {}): Promise<QDHTConfig> {
   const raw = JSON.parse(await readFile(configPath, 'utf8')) as unknown
   const config = validateConfig(raw, configPath)
-  if (overrides.port !== undefined) config.port = overrides.port
-  if (overrides.peers !== undefined) config.peers = overrides.peers
-  if (overrides.relays !== undefined) config.relays = overrides.relays
-  if (overrides.nip96Servers !== undefined) config.nip96Servers = overrides.nip96Servers
-  if (overrides.quicPeers !== undefined) config.quicPeers = overrides.quicPeers
-  if (overrides.quicListenPort !== undefined) config.quicListenPort = overrides.quicListenPort
-  if (overrides.webPort !== undefined) config.webPort = overrides.webPort
-  if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
-  if (overrides.bootstrapMode !== undefined) config.bootstrapMode = overrides.bootstrapMode
-  if (overrides.maxPeers !== undefined) config.maxPeers = overrides.maxPeers
-  if (overrides.listenAddress !== undefined) config.listenAddress = overrides.listenAddress
-  return config
+  return applyOverrides(config, overrides)
 }
 
 export async function initConfig(configPath: string, defaultDataDir: string): Promise<QDHTConfig> {
@@ -153,13 +203,7 @@ export async function initConfig(configPath: string, defaultDataDir: string): Pr
   }
 
   const keypair = generateKeypair()
-  const config: QDHTConfig = {
-    identity: { privkey: keypair.privkey },
-    peers: [],
-    quicPeers: [],
-    port: 7777,
-    dataDir: defaultDataDir,
-  }
+  const config = buildDefaultConfig(keypair.privkey, defaultDataDir)
 
   await mkdir(dirname(configPath), { recursive: true })
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`)

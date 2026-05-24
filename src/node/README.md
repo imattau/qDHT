@@ -20,6 +20,7 @@ The live node stores its SQLite-backed index and event history in a single `qdht
 When enabled, the web frontend is served from the same node process on the configured `webPort`.
 If either the node listen port or the web port is already in use, qDHT now increments to the next free port and reports the actual bound port at startup.
 Regular nodes also auto-connect to advertised `30181` service records when the peer discovery policy approves the endpoint. Bootstrap nodes intentionally skip that dialing step so they remain rendezvous-only peers.
+If `localDiscovery` is enabled, the node also gossips signed service records on a local UDP discovery channel so nearby peers can find each other without manual bootstrap peers.
 
 ## CLI
 

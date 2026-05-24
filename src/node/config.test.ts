@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { initConfig, loadConfig, type QDHTConfig } from './config.js'
+import { nsecEncode } from 'nostr-tools/nip19'
+import { generateKeypair } from '../core/identity/keys.js'
+import { buildDefaultConfig, generateSessionIdentity, initConfig, loadConfig, privkeyFromNsec, type QDHTConfig } from './config.js'
 
 let tmpDir = ''
 
@@ -23,6 +25,8 @@ describe('loadConfig', () => {
       nip96Servers: ['https://nip96.example.com/upload'],
       quicPeers: ['quic://localhost:8888'],
       quicListenPort: 8888,
+      localDiscovery: true,
+      localDiscoveryPort: 45555,
       webPort: 8080,
       port: 7777,
       dataDir: tmpDir,
@@ -36,6 +40,8 @@ describe('loadConfig', () => {
     expect(loaded.nip96Servers).toEqual(['https://nip96.example.com/upload'])
     expect(loaded.quicPeers).toEqual(['quic://localhost:8888'])
     expect(loaded.quicListenPort).toBe(8888)
+    expect(loaded.localDiscovery).toBe(true)
+    expect(loaded.localDiscoveryPort).toBe(45555)
     expect(loaded.webPort).toBe(8080)
   })
 
@@ -90,6 +96,18 @@ describe('loadConfig', () => {
     const bad = { identity: { privkey: '2'.repeat(64) }, peers: [], webPort: 'abc', port: 7777, dataDir: tmpDir }
     await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
     await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('webPort')
+  })
+
+  it('throws on invalid localDiscovery flag', async () => {
+    const bad = { identity: { privkey: '3'.repeat(64) }, peers: [], localDiscovery: 'yes', port: 7777, dataDir: tmpDir }
+    await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
+    await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('localDiscovery')
+  })
+
+  it('throws on invalid localDiscoveryPort', async () => {
+    const bad = { identity: { privkey: '4'.repeat(64) }, peers: [], localDiscoveryPort: 'abc', port: 7777, dataDir: tmpDir }
+    await writeFile(join(tmpDir, 'config.json'), JSON.stringify(bad))
+    await expect(loadConfig(join(tmpDir, 'config.json'))).rejects.toThrow('localDiscoveryPort')
   })
 })
 
@@ -168,6 +186,7 @@ describe('initConfig', () => {
     expect(cfg.port).toBe(7777)
     expect(cfg.peers).toEqual([])
     expect(cfg.quicPeers).toEqual([])
+    expect(cfg.localDiscovery).toBeUndefined()
   })
 
   it('returns existing config if file exists', async () => {
@@ -182,5 +201,28 @@ describe('initConfig', () => {
     await writeFile(configPath, JSON.stringify(existing))
     const cfg = await initConfig(configPath, tmpDir)
     expect(cfg.port).toBe(8888)
+  })
+})
+
+describe('nsec helpers', () => {
+  it('parses nsec back to the original private key', () => {
+    const keypair = generateKeypair()
+    const nsec = nsecEncode(Buffer.from(keypair.privkey, 'hex'))
+    expect(privkeyFromNsec(nsec)).toBe(keypair.privkey)
+  })
+
+  it('generates a printable session identity', () => {
+    const identity = generateSessionIdentity()
+    expect(identity.privkey).toMatch(/^[0-9a-f]{64}$/)
+    expect(identity.nsec).toMatch(/^nsec1/)
+    expect(privkeyFromNsec(identity.nsec)).toBe(identity.privkey)
+  })
+
+  it('builds a default config with the supplied private key', () => {
+    const cfg = buildDefaultConfig('a'.repeat(64), tmpDir)
+    expect(cfg.identity.privkey).toBe('a'.repeat(64))
+    expect(cfg.peers).toEqual([])
+    expect(cfg.quicPeers).toEqual([])
+    expect(cfg.dataDir).toBe(tmpDir)
   })
 })

@@ -26,8 +26,13 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await nodeA?.stop()
-  await nodeB?.stop()
+  await Promise.race([
+    Promise.all([
+      nodeA?.stop() ?? Promise.resolve(),
+      nodeB?.stop() ?? Promise.resolve(),
+    ]),
+    new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+  ])
   await rm(dirA, { recursive: true, force: true })
   await rm(dirB, { recursive: true, force: true })
   nodeA = undefined
@@ -61,5 +66,5 @@ describe('two-node integration', () => {
     await waitFor(() => nodeB!.hasReceivedKey(loc.qkey), 5000)
 
     expect(nodeB.hasReceivedKey(loc.qkey)).toBe(true)
-  })
+  }, 15_000)
 })

@@ -40,8 +40,14 @@ tsx bin/qdht-node.ts start [options]
 | `--port <port>` | number | from config | WebSocket listen port. If already in use, increments to the next free port. |
 | `--web-port <port>` | number | from config | HTTP port for the browser dashboard and JSON API. Set to `0` to pick any free port. |
 | `--data-dir <dir>` | string | `~/.qdht/data` | Directory for `qdht.sqlite` and the Unix socket `qdht.sock`. |
+| `--nsec <nsec>` | string | — | Run this instance with the supplied Nostr private key for the current session. |
+| `--random-nsec` | flag | off | Generate a random Nostr private key for this session and print the resulting `nsec` on startup. |
+| `--local-discovery` | flag | off | Enable UDP multicast peer discovery on the local network. |
+| `--local-discovery-port <port>` | number | `45555` | UDP port used for local discovery broadcasts and listeners. |
 
 On startup the node prints its pubkey, bound port, data directory, and web URL (if web is enabled).
+When `--random-nsec` is used, the startup output also prints the generated `nsec`.
+When `--local-discovery` is enabled, the node advertises and listens for signed `30181` service records over UDP multicast so nearby peers can auto-connect without manual bootstrap peers.
 
 ### `put <file>`
 

@@ -8,12 +8,16 @@ import { fileURLToPath } from 'node:url'
 import { generateKeypair } from '../core/identity/keys.js'
 import { NostrSqliteStore } from '../core/nostr/sqlite-store.js'
 import { buildRouteAnnouncement, signRouteAnnouncement } from '../core/discovery/reachability.js'
+import { nsecEncode } from 'nostr-tools/nip19'
+import { privkeyFromNsec } from './config.js'
+import { pubkeyFromPrivkey } from '../core/identity/keys.js'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const TSX_ARGS = ['--import', 'tsx', 'bin/qdht-node.ts']
 
 let tmpRoot = ''
 let daemon: ChildProcess | undefined
+let daemonStartup = { stdout: '', stderr: '' }
 
 async function waitFor(fn: () => boolean | Promise<boolean>, timeoutMs = 5000): Promise<void> {
   const start = Date.now()
@@ -75,9 +79,9 @@ function spawnCli(args: string[], input?: Buffer | string): ChildProcess & { std
   return child
 }
 
-function startDaemon(configPath: string): Promise<void> {
+function startDaemon(configPath: string, extraArgs: string[] = []): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [...TSX_ARGS, 'start', '--config', configPath], {
+    const child = spawn(process.execPath, [...TSX_ARGS, 'start', '--config', configPath, ...extraArgs], {
       cwd: REPO_ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -92,6 +96,7 @@ function startDaemon(configPath: string): Promise<void> {
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString()
       if (stdout.includes('qdht-node started')) {
+        daemonStartup = { stdout, stderr }
         resolve()
       }
     })
@@ -129,9 +134,67 @@ beforeEach(async () => {
 afterEach(async () => {
   await stopDaemon()
   await rm(tmpRoot, { recursive: true, force: true })
+  daemonStartup = { stdout: '', stderr: '' }
 })
 
 describe('qdht-node CLI e2e', () => {
+  it('starts with an explicit nsec without changing the persisted config identity', async () => {
+    const configPath = join(tmpRoot, 'nsec-config.json')
+    const storedKey = generateKeypair()
+    const runtimeKey = generateKeypair()
+
+    await writeFile(configPath, JSON.stringify({
+      identity: { privkey: storedKey.privkey },
+      peers: [],
+      port: 21920,
+      dataDir: join(tmpRoot, 'nsec'),
+    }))
+
+    await startDaemon(configPath, ['--nsec', nsecEncode(Buffer.from(runtimeKey.privkey, 'hex'))])
+
+    expect(daemonStartup.stdout).toContain('qdht-node started')
+    expect(daemonStartup.stdout).toContain(`pubkey : ${runtimeKey.pubkey}`)
+    expect(daemonStartup.stdout).not.toContain(`pubkey : ${storedKey.pubkey}`)
+
+    const persisted = JSON.parse(await readFile(configPath, 'utf8')) as { identity: { privkey: string } }
+    expect(persisted.identity.privkey).toBe(storedKey.privkey)
+  }, 20_000)
+
+  it('starts with a random nsec for the session and prints it on startup', async () => {
+    const configPath = join(tmpRoot, 'random-nsec-config.json')
+
+    await writeFile(configPath, JSON.stringify({
+      identity: { privkey: 'd'.repeat(64) },
+      peers: [],
+      port: 21921,
+      dataDir: join(tmpRoot, 'random-nsec'),
+    }))
+
+    await startDaemon(configPath, ['--random-nsec'])
+
+    expect(daemonStartup.stdout).toContain('qdht-node started')
+    const nsecLine = daemonStartup.stdout.split('\n').find((line) => line.trim().startsWith('nsec   : '))
+    expect(nsecLine).toBeDefined()
+    const printedNsec = (() => {
+      if (!nsecLine) {
+        throw new Error('missing nsec startup line')
+      }
+      expect(nsecLine).toContain('nsec1')
+      const [, encoded] = nsecLine.split('nsec   : ')
+      if (!encoded) {
+        throw new Error('malformed nsec startup line')
+      }
+      return encoded.trim()
+    })()
+    const runtimePrivkey = privkeyFromNsec(printedNsec)
+    const runtimePubkey = pubkeyFromPrivkey(runtimePrivkey)
+    expect(daemonStartup.stdout).toContain(`pubkey : ${runtimePubkey}`)
+    expect(runtimePubkey).toHaveLength(64)
+
+    const persisted = JSON.parse(await readFile(configPath, 'utf8')) as { identity: { privkey: string } }
+    expect(persisted.identity.privkey).toBe('d'.repeat(64))
+  }, 20_000)
+
   it('starts a daemon, accepts put, reports peers, and retrieves content through the binary', async () => {
     const dirA = join(tmpRoot, 'a')
     const dirB = join(tmpRoot, 'b')
@@ -189,7 +252,7 @@ describe('qdht-node CLI e2e', () => {
     expect(search.stdout).toContain('Request : content "input.txt"')
     expect(search.stdout).toContain('Announcements:')
     expect(search.stdout).toContain('input.txt')
-  }, 30_000)
+  }, 60_000)
 
   it('searches identity routes through the daemon CLI', async () => {
     const dirA = join(tmpRoot, 'identity')

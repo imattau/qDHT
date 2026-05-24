@@ -492,6 +492,7 @@ export class SyncManager {
     const since = Number(getTag(event.tags, 'since') ?? '0')
     const announcements: string[] = []
     const replicas: string[] = []
+    const routes: string[] = []
     const reputationDeltas: string[] = []
     const expired: string[] = []
 
@@ -503,6 +504,8 @@ export class SyncManager {
         announcements.push(JSON.stringify(stored))
       } else if (stored.kind === 10801) {
         replicas.push(JSON.stringify(stored))
+      } else if (stored.kind === 30801) {
+        routes.push(JSON.stringify(stored))
       } else if (stored.kind === 10802) {
         reputationDeltas.push(JSON.stringify(stored))
       }
@@ -514,6 +517,7 @@ export class SyncManager {
       since,
       announcements,
       replicas,
+      routes,
       reputationDeltas,
       expired,
     })
@@ -526,6 +530,7 @@ export class SyncManager {
       const payload = JSON.parse(event.content) as {
         announcements: string[]
         replicas: string[]
+        routes: string[]
         reputationDeltas: string[]
         expired: string[]
       }
@@ -538,6 +543,11 @@ export class SyncManager {
         const replica = JSON.parse(raw) as AnyEvent
         const id = (replica as AnyEvent & { id?: string }).id ?? `${replica.pubkey}-${replica.created_at}`
         this.recordEvent({ ...replica, id })
+      }
+      for (const raw of payload.routes) {
+        const route = JSON.parse(raw) as AnyEvent
+        const id = (route as AnyEvent & { id?: string }).id ?? `${route.pubkey}-${route.created_at}`
+        this.recordEvent({ ...route, id })
       }
       for (const raw of payload.reputationDeltas) {
         const delta = JSON.parse(raw) as AnyEvent

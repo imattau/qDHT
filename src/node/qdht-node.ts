@@ -25,6 +25,8 @@ import type { StoredNostrEvent } from '../core/storage/event-repository.js'
 import type { Transport } from './transport.js'
 import { BootstrapService } from './bootstrap-service.js'
 import { DefaultPeerDiscoveryPolicy } from './peer-discovery-policy.js'
+import { LocalDiscoveryService } from './local-discovery.js'
+import { buildAdvertisedListenAddress } from './listen-address.js'
 
 type RpcRequest =
   | { cmd: 'peers' }
@@ -98,6 +100,7 @@ export class QDHTNode {
   private started = false
   private fetchNetworkConnected = false
   private bootstrapService: BootstrapService | null = null
+  private localDiscovery: LocalDiscoveryService | null = null
 
   constructor(private config: QDHTConfig, storage?: NodeStorage) {
     this.kp = keypairFromHex(config.identity.privkey)
@@ -209,6 +212,16 @@ export class QDHTNode {
       })
     }
 
+    if (config.localDiscovery) {
+      this.localDiscovery = new LocalDiscoveryService({
+        pubkey: this.kp.pubkey,
+        privkey: this.kp.privkey,
+        port: config.localDiscoveryPort ?? 45555,
+        getListenAddress: () => buildAdvertisedListenAddress(this.config.listenAddress, this.listenPort()),
+        onEvent: (event, peerId) => this.syncManager?.handleMessage(event, peerId),
+      })
+    }
+
     if (config.webPort !== undefined) {
       this.webServer = new NodeWebServer(this, config.webPort)
     }
@@ -221,6 +234,8 @@ export class QDHTNode {
     this.started = true
     await mkdir(this.config.dataDir, { recursive: true })
     await this.peerManager.listen()
+    this.peerManager.setListenAddress(buildAdvertisedListenAddress(this.config.listenAddress, this.listenPort()))
+    await this.localDiscovery?.start()
     await this.connect()
     await this.startRpc()
     await this.webServer?.start()
@@ -229,6 +244,7 @@ export class QDHTNode {
   async stop(): Promise<void> {
     await this.webServer?.close()
     await this.disconnect()
+    await this.localDiscovery?.close()
     this.bootstrapService?.stop()
     this.storage.close()
     this.syncManager?.close()

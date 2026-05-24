@@ -73,6 +73,7 @@ describe('delta', () => {
       since: 42,
       announcements: ['a1', 'a2'],
       replicas: [],
+      routes: [],
       reputationDeltas: [],
       expired: [],
     })

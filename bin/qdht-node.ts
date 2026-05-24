@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createConnection } from 'node:net'
-import { initConfig, loadConfig, type ConfigOverrides, type QDHTConfig } from '../src/node/config.js'
+import { buildDefaultConfig, generateSessionIdentity, initConfig, loadConfig, privkeyFromNsec, type ConfigOverrides, type QDHTConfig } from '../src/node/config.js'
 import { QDHTNode } from '../src/node/qdht-node.js'
 
 const DEFAULT_CONFIG_PATH = join(homedir(), '.qdht', 'config.json')
@@ -12,20 +12,37 @@ const DEFAULT_DATA_DIR = join(homedir(), '.qdht', 'data')
 async function loadNodeConfig(
   configPath: string,
   overrides: ConfigOverrides = {},
+  identityOverride?: { privkey: string; nsec?: string },
 ): Promise<QDHTConfig> {
   try {
-    return await loadConfig(configPath, overrides)
+    const config = await loadConfig(configPath, overrides)
+    if (identityOverride) {
+      config.identity.privkey = identityOverride.privkey
+    }
+    return config
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw err
     }
   }
-  const config = await initConfig(configPath, overrides.dataDir ?? DEFAULT_DATA_DIR)
+
+  const config = identityOverride
+    ? buildDefaultConfig(identityOverride.privkey, overrides.dataDir ?? DEFAULT_DATA_DIR)
+    : await initConfig(configPath, overrides.dataDir ?? DEFAULT_DATA_DIR)
+
   if (overrides.port !== undefined) config.port = overrides.port
   if (overrides.peers !== undefined) config.peers = overrides.peers
-  if (overrides.relays !== undefined) config.relays = overrides.relays
-  if (overrides.webPort !== undefined) config.webPort = overrides.webPort
+    if (overrides.relays !== undefined) config.relays = overrides.relays
+    if (overrides.nip96Servers !== undefined) config.nip96Servers = overrides.nip96Servers
+    if (overrides.quicPeers !== undefined) config.quicPeers = overrides.quicPeers
+    if (overrides.quicListenPort !== undefined) config.quicListenPort = overrides.quicListenPort
+    if (overrides.localDiscovery !== undefined) config.localDiscovery = overrides.localDiscovery
+    if (overrides.localDiscoveryPort !== undefined) config.localDiscoveryPort = overrides.localDiscoveryPort
+    if (overrides.webPort !== undefined) config.webPort = overrides.webPort
   if (overrides.dataDir !== undefined) config.dataDir = overrides.dataDir
+  if (overrides.bootstrapMode !== undefined) config.bootstrapMode = overrides.bootstrapMode
+  if (overrides.maxPeers !== undefined) config.maxPeers = overrides.maxPeers
+  if (overrides.listenAddress !== undefined) config.listenAddress = overrides.listenAddress
   return config
 }
 
@@ -120,6 +137,10 @@ program
   .option('--port <port>', 'Override listen port', (value) => Number(value))
   .option('--web-port <port>', 'Override web UI port', (value) => Number(value))
   .option('--data-dir <dir>', 'Override data directory')
+  .option('--nsec <nsec>', 'Use the supplied Nostr private key for this run')
+  .option('--random-nsec', 'Generate a random Nostr private key for this run')
+  .option('--local-discovery', 'Enable UDP multicast local peer discovery')
+  .option('--local-discovery-port <port>', 'UDP port used for local peer discovery', (value) => Number(value))
   .option('--bootstrap', 'Run in bootstrap mode (rendezvous only, no routing)')
   .option('--max-peers <n>', 'Maximum concurrent peers (bootstrap mode only)', (value) => Number(value))
   .option('--listen-address <url>', 'Publicly reachable WebSocket URL to advertise in 30181')
@@ -128,28 +149,46 @@ program
     port?: number
     webPort?: number
     dataDir?: string
+    nsec?: string
+    randomNsec?: boolean
+    localDiscovery?: boolean
+    localDiscoveryPort?: number
     bootstrap?: boolean
     maxPeers?: number
     listenAddress?: string
   }) => {
+    if (opts.nsec && opts.randomNsec) {
+      throw new Error('Choose either --nsec or --random-nsec, not both')
+    }
+    const identityOverride = opts.nsec
+      ? { privkey: privkeyFromNsec(opts.nsec), nsec: opts.nsec }
+      : opts.randomNsec
+        ? generateSessionIdentity()
+        : undefined
+
     const config = await loadNodeConfig(opts.config, {
       port: opts.port,
       webPort: opts.webPort,
       dataDir: opts.dataDir,
+      localDiscovery: opts.localDiscovery,
+      localDiscoveryPort: opts.localDiscoveryPort,
       bootstrapMode: opts.bootstrap,
       maxPeers: opts.maxPeers,
       listenAddress: opts.listenAddress,
-    })
+    }, identityOverride)
     const node = new QDHTNode(config)
     await node.start()
 
-    console.log(`qdht-node started`)
     console.log(`  pubkey : ${node.pubkey()}`)
     console.log(`  port   : ${node.listenPort()}`)
     console.log(`  dataDir: ${config.dataDir}`)
+    if (identityOverride?.nsec && opts.randomNsec) {
+      console.log(`  nsec   : ${identityOverride.nsec}`)
+    }
     if (node.webPort() !== null) {
       console.log(`  web    : http://127.0.0.1:${node.webPort()}`)
     }
+    console.log(`qdht-node started`)
 
     process.on('SIGINT', async () => {
       await node.stop()

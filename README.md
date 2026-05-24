@@ -27,6 +27,7 @@ It is organized around a few bounded layers:
 - `src/sim` for the simulation harness and comparison scenarios
 - `src/bench` for qDHT vs baseline benchmark runs
 - `examples` for runnable demos
+- optional local-network peer discovery via signed service-record gossip
 
 ## How It Works
 
@@ -91,6 +92,7 @@ npm run node:start
 
 - `npm run node:start` start the daemon
 - `npm run node:start -- --web-port 3000` start the daemon with the web dashboard enabled
+- `npm run node:start -- --local-discovery` start the daemon with local-network peer discovery enabled
 - `npm run web:start` start the daemon with the web dashboard on port 3000
 - `npm run example:hello` run the simplest publish/get demo
 - `npm run example:reachability` run the DNS-less identity-to-route demo
@@ -175,6 +177,8 @@ Identity-to-route resolution lives in `src/core/discovery/reachability.ts`. When
 Peers also emit observed-address events so each node learns its own externally-visible address without a STUN server. The reachability layer uses those reflections to set `typeEstimate` to one of `open`, `cone`, `symmetric`, or `unknown`.
 
 Regular nodes also ingest `30181` service records and may auto-connect to the advertised endpoint when the peer discovery policy allows it. Bootstrap nodes still cache and fan out service records, but they do not auto-dial peers.
+
+If `localDiscovery` is enabled, nodes also gossip those signed service records over a local UDP discovery channel so nearby peers can find each other without manual bootstrap peers.
 
 ## Graph Computation Layer
 

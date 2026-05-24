@@ -461,7 +461,7 @@ describe('SyncManager', () => {
       pubkey: 'b'.repeat(64),
       created_at: Math.floor(Date.now() / 1000),
       tags: [['request', 'req1'], ['since', '0'], ['count', '0']],
-      content: JSON.stringify({ announcements: [], replicas: [], reputationDeltas: [], expired: [] }),
+      content: JSON.stringify({ announcements: [], replicas: [], routes: [], reputationDeltas: [], expired: [] }),
       sig: '',
       id: 'resp1',
     }
