@@ -44,6 +44,10 @@ tsx bin/qdht-node.ts start [options]
 | `--random-nsec` | flag | off | Generate a random Nostr private key for this session and print the resulting `nsec` on startup. |
 | `--local-discovery` | flag | off | Enable UDP multicast peer discovery on the local network. |
 | `--local-discovery-port <port>` | number | `45555` | UDP port used for local discovery broadcasts and listeners. |
+| `--peer <url>` | string | — | Static peer URL to connect to (can be repeated). |
+| `--bootstrap` | flag | off | Run in bootstrap mode (rendezvous only, no routing). |
+| `--max-peers <n>` | number | `50` | Maximum concurrent peers (bootstrap mode only). |
+| `--listen-address <url>` | string | — | Publicly reachable WebSocket URL to advertise in 30181. |
 
 On startup the node prints its pubkey, bound port, data directory, and web URL (if web is enabled).
 When `--random-nsec` is used, the startup output also prints the generated `nsec`.

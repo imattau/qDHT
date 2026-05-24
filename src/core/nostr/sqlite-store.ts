@@ -163,11 +163,11 @@ export class NostrSqliteStore implements NostrEventRepository {
       WHERE event_key = ?
     `)
     this.insertIdentityRefStmt = this.db.prepare(`
-      INSERT INTO event_identity_refs (event_key, role, identity_id)
+      INSERT OR REPLACE INTO event_identity_refs (event_key, role, identity_id)
       VALUES (?, ?, ?)
     `)
     this.insertTagStmt = this.db.prepare(`
-      INSERT INTO event_tags (event_key, tag_key_id, tag_index, value_index, tag_value)
+      INSERT OR REPLACE INTO event_tags (event_key, tag_key_id, tag_index, value_index, tag_value)
       VALUES (?, ?, ?, ?, ?)
     `)
     this.loadAllStmt = this.db.prepare(`
@@ -186,48 +186,55 @@ export class NostrSqliteStore implements NostrEventRepository {
   }
 
   upsert(event: StoredNostrEvent): void {
-    this.ensureIdentityStmt.run(event.pubkey)
-    const identityRow = this.getIdentityIdStmt.get(event.pubkey) as { identity_id?: number } | undefined
-    if (!identityRow || typeof identityRow.identity_id !== 'number') {
-      throw new Error(`failed to resolve identity id for ${event.pubkey}`)
-    }
-    const identityId = identityRow.identity_id
-    this.insertStmt.run(
-      eventKey(event),
-      identityId,
-      event.kind,
-      event.created_at,
-      event.content,
-      event.sig,
-    )
-    const eventKeyValue = eventKey(event)
-    this.deleteTagsStmt.run(eventKeyValue)
-    this.deleteIdentityRefsStmt.run(eventKeyValue)
-    for (const ref of this.extractIdentityRefs(event)) {
-      this.ensureIdentityStmt.run(ref.pubkey)
-      const refIdentityRow = this.getIdentityIdStmt.get(ref.pubkey) as { identity_id?: number } | undefined
-      if (!refIdentityRow || typeof refIdentityRow.identity_id !== 'number') {
-        continue
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.ensureIdentityStmt.run(event.pubkey)
+      const identityRow = this.getIdentityIdStmt.get(event.pubkey) as { identity_id?: number } | undefined
+      if (!identityRow || typeof identityRow.identity_id !== 'number') {
+        throw new Error(`failed to resolve identity id for ${event.pubkey}`)
       }
-      this.insertIdentityRefStmt.run(eventKeyValue, ref.role, refIdentityRow.identity_id)
-    }
-    for (let tagIndex = 0; tagIndex < event.tags.length; tagIndex++) {
-      const tag = event.tags[tagIndex]
-      if (!Array.isArray(tag)) {
-        continue
+      const identityId = identityRow.identity_id
+      this.insertStmt.run(
+        eventKey(event),
+        identityId,
+        event.kind,
+        event.created_at,
+        event.content,
+        event.sig,
+      )
+      const eventKeyValue = eventKey(event)
+      this.deleteTagsStmt.run(eventKeyValue)
+      this.deleteIdentityRefsStmt.run(eventKeyValue)
+      for (const ref of this.extractIdentityRefs(event)) {
+        this.ensureIdentityStmt.run(ref.pubkey)
+        const refIdentityRow = this.getIdentityIdStmt.get(ref.pubkey) as { identity_id?: number } | undefined
+        if (!refIdentityRow || typeof refIdentityRow.identity_id !== 'number') {
+          continue
+        }
+        this.insertIdentityRefStmt.run(eventKeyValue, ref.role, refIdentityRow.identity_id)
       }
-      const tagName = tag[0]
-      if (typeof tagName !== 'string' || tagName.length === 0) {
-        continue
+      for (let tagIndex = 0; tagIndex < event.tags.length; tagIndex++) {
+        const tag = event.tags[tagIndex]
+        if (!Array.isArray(tag)) {
+          continue
+        }
+        const tagName = tag[0]
+        if (typeof tagName !== 'string' || tagName.length === 0) {
+          continue
+        }
+        this.ensureTagKeyStmt.run(tagName)
+        const tagKeyRow = this.getTagKeyIdStmt.get(tagName) as { tag_key_id?: number } | undefined
+        if (!tagKeyRow || typeof tagKeyRow.tag_key_id !== 'number') {
+          continue
+        }
+        for (let valueIndex = 0; valueIndex < tag.length; valueIndex++) {
+          this.insertTagStmt.run(eventKeyValue, tagKeyRow.tag_key_id, tagIndex, valueIndex, tag[valueIndex] ?? '')
+        }
       }
-      this.ensureTagKeyStmt.run(tagName)
-      const tagKeyRow = this.getTagKeyIdStmt.get(tagName) as { tag_key_id?: number } | undefined
-      if (!tagKeyRow || typeof tagKeyRow.tag_key_id !== 'number') {
-        continue
-      }
-      for (let valueIndex = 0; valueIndex < tag.length; valueIndex++) {
-        this.insertTagStmt.run(eventKeyValue, tagKeyRow.tag_key_id, tagIndex, valueIndex, tag[valueIndex] ?? '')
-      }
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
     }
   }
 

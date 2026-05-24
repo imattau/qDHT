@@ -141,6 +141,7 @@ program
   .option('--random-nsec', 'Generate a random Nostr private key for this run')
   .option('--local-discovery', 'Enable UDP multicast local peer discovery')
   .option('--local-discovery-port <port>', 'UDP port used for local peer discovery', (value) => Number(value))
+  .option('--peer <url>', 'Static peer URL to connect to (can be repeated)', (value, previous: string[] | undefined) => (previous || []).concat([value]))
   .option('--bootstrap', 'Run in bootstrap mode (rendezvous only, no routing)')
   .option('--max-peers <n>', 'Maximum concurrent peers (bootstrap mode only)', (value) => Number(value))
   .option('--listen-address <url>', 'Publicly reachable WebSocket URL to advertise in 30181')
@@ -153,6 +154,7 @@ program
     randomNsec?: boolean
     localDiscovery?: boolean
     localDiscoveryPort?: number
+    peer?: string[]
     bootstrap?: boolean
     maxPeers?: number
     listenAddress?: string
@@ -172,6 +174,7 @@ program
       dataDir: opts.dataDir,
       localDiscovery: opts.localDiscovery,
       localDiscoveryPort: opts.localDiscoveryPort,
+      peers: opts.peer,
       bootstrapMode: opts.bootstrap,
       maxPeers: opts.maxPeers,
       listenAddress: opts.listenAddress,

@@ -113,7 +113,12 @@ export class PeerManager implements Transport {
 
     // @ts-ignore -- reconnecting-websocket CJS types lose construct signature under NodeNext
     const rws = new ReconnectingWebSocket(url, [], {
-      WebSocket: WebSocket as unknown as new (...args: unknown[]) => unknown,
+      WebSocket: class extends WebSocket {
+        constructor(url: string, protocols?: string | string[], options?: any) {
+          super(url, protocols, options)
+          this.on('error', () => {}) // Prevent unhandled 'error' events from crashing the process
+        }
+      } as unknown as new (...args: unknown[]) => unknown,
       maxRetries: Infinity,
       reconnectionDelayGrowFactor: 2,
       minReconnectionDelay: RECONNECT_MIN_MS,

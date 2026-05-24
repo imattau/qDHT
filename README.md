@@ -93,6 +93,7 @@ npm run node:start
 - `npm run node:start` start the daemon
 - `npm run node:start -- --web-port 3000` start the daemon with the web dashboard enabled
 - `npm run node:start -- --local-discovery` start the daemon with local-network peer discovery enabled
+- `npm run node:start -- --peer ws://1.2.3.4:7777` connect to a specific bootstrap peer
 - `npm run web:start` start the daemon with the web dashboard on port 3000
 - `npm run example:hello` run the simplest publish/get demo
 - `npm run example:reachability` run the DNS-less identity-to-route demo
