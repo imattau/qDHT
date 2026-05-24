@@ -113,9 +113,15 @@ scripts/deploy.sh update
 scripts/deploy.sh test
 ```
 
+To deploy a bootstrap node (rendezvous node for peer discovery, no content ops):
+
+```bash
+scripts/deploy.sh install --domain bootstrap.example.com --bootstrap
+```
+
 The script auto-detects Caddy or nginx for reverse proxy setup. Use `--proxy none` to skip.
 
-Environment overrides: `QDHT_DOMAIN`, `QDHT_PORT`, `QDHT_PROXY`, `QDHT_DRY_RUN`.
+Environment overrides: `QDHT_DOMAIN`, `QDHT_PORT`, `QDHT_PROXY`, `QDHT_BOOTSTRAP`, `QDHT_DRY_RUN`.
 
 To build compiled JS locally without deploying:
 
