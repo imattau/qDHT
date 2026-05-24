@@ -1,55 +1,44 @@
-# Session State Checkpoint: qDHT Library Audit
-Generated: 2026-05-24
-Reason: Context threshold exceeded (66.6%) - delegating audit task
+# Session State — Bootstrap Node Design Brainstorm
 
-## Execution Mode
-**Mode**: interactive
-**Auto-Continue**: false
-**Task**: Audit /home/mattthomson/workspace/qDHT/src for custom code replaceable with npm libraries
+execution_mode: unattended
+auto_continue: false
 
-## Current Task
-Audit non-test .ts files for custom code that could be replaced with npm libraries. Focus on: HTTP clients, retry logic, data structures (LRU, priority queues, bloom filters), encoding/decoding, event emitters, validation, time/date handling.
+## Objective
+Design a bootstrap node mode for qDHT following the brainstorming skill process. Write a spec doc and commit it.
 
-## Skip These (Already Fixed/Installed)
-**Fixed patterns** (don't suggest again):
-- hexToBytes/bytesToHex → @noble/hashes
-- Jacobi eigensolver → ml-matrix
-- LCG PRNG → seedrandom
-- SHA-256 createHash → @noble/hashes/sha2.js
-- Port-scan loops → get-port
-- WebSocket reconnect/backoff → reconnecting-websocket
+## Decisions Made So Far
+- **Mode**: C — passive peer discovery via `30181` node profile events (+ nodes publish `30181` on connect)
+- **NAT reflection**: Yes — bootstrap reflects connecting peer's public IP/port back (STUN-like), reusing existing `OBSERVED_ADDRESS` reachability kind and `req.socket.remoteAddress` in peer-manager.ts:84
+- **Persistence**: C — persist only static seed peers from config; dynamic peers in-memory
+- **Rendezvous**: Full rendezvous — initial connection point AND helps peers find each other so they can disconnect from bootstrap once connected
+- **CLI/config**: NOT YET DECIDED — one question remaining
 
-**Already installed deps**:
-- nostr-tools, @noble/hashes, @noble/curves, ml-matrix, seedrandom, get-port, reconnecting-websocket, ws, commander, libp2p, @libp2p/*, multiformats, @matrixai/quic
+## Remaining Brainstorm Questions
+1. Bootstrap mode: CLI flag (`--bootstrap`), config field (`bootstrap: true`), or both?
 
-## Files to Audit (Full Read + Analysis)
-Read these files completely and identify replaceable custom logic:
+## Design to Cover
+- `30181` publish on node startup (prerequisite)
+- Bootstrap mode flag/config
+- Higher connection limits in bootstrap mode
+- Skip content ops (no Propagator, ReplicaStore, ReputationMap, ContentProviderRegistry)
+- Cache received `30181` events and rebroadcast to new peers on connect
+- IP reflection via OBSERVED_ADDRESS on connect
 
-1. src/core/content/http-provider.ts
-2. src/core/content/nip96-provider.ts
-3. src/core/content/pieces.ts OR piece-fetcher.ts (whichever exists)
-4. src/node/sync-manager.ts
-5. src/node/transport.ts
-6. src/sim/runner/metrics.ts
-7. src/sim/runner/report.ts
-8. src/core/neighbour-state.ts
-9. web/app.js
+## Key Files
+- src/node/qdht-node.ts — main node
+- src/node/peer-manager.ts — remoteAddress at line 84
+- src/node/config.ts — QDHTConfig interface
+- src/node/README.md — documents OBSERVED_ADDRESS
 
-## Output Format Required
-For each finding, report:
-- **File path** (absolute)
-- **What custom code does**
-- **What library could replace it**
-- **Value** (high/medium/low)
+## Spec Output
+docs/superpowers/specs/2026-05-24-bootstrap-node-design.md
 
-Skip domain-specific DHT logic. Focus only on: HTTP clients, retry logic, data structures, encoding/decoding, event emitters, validation, time/date handling.
-
-## Continuation Instructions
-1. Read each file completely (use Read tool, not Bash)
-2. Identify custom logic not using dependencies
-3. Check if a library in npm/Context7 already covers it
-4. Build findings list
-5. Return comprehensive audit report as final assistant message (NOT a file)
-
-## Key Note
-This is a READ-ONLY audit. You have Bash and Read tools only. Do NOT create files, do NOT modify code. Just analyze and report findings.
+## Skill Checklist
+- [x] Explore project context
+- [ ] Ask final clarifying question (CLI vs config)
+- [ ] Propose 2-3 approaches
+- [ ] Present design sections + get approval
+- [ ] Write design doc
+- [ ] Spec self-review
+- [ ] User reviews spec
+- [ ] Invoke writing-plans skill

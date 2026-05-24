@@ -30,6 +30,7 @@ DOMAIN="${QDHT_DOMAIN:-}"
 PORT_OVERRIDE="${QDHT_PORT:-}"
 QUIC_PORT_OVERRIDE="${QDHT_QUIC_PORT:-}"
 WEB_PORT_OVERRIDE="${QDHT_WEB_PORT:-}"
+BOOTSTRAP_MODE="${QDHT_BOOTSTRAP:-false}"
 NON_INTERACTIVE=false
 DRY_RUN="${QDHT_DRY_RUN:-false}"
 NODE_BIN="${NODE_BIN:-}"
@@ -130,7 +131,7 @@ rollback() {
 usage() {
 	cat <<'EOF'
 Usage:
-  scripts/deploy.sh install [--domain example.com] [--proxy auto|caddy|nginx|none] [--port 8080] [--quic-port 8443] [--web-port 3000] [--non-interactive] [--dry-run]
+  scripts/deploy.sh install [--domain example.com] [--proxy auto|caddy|nginx|none] [--port 8080] [--quic-port 8443] [--web-port 3000] [--bootstrap] [--non-interactive] [--dry-run]
   scripts/deploy.sh update
   scripts/deploy.sh test
 
@@ -140,6 +141,7 @@ Environment overrides:
   QDHT_PORT=8080
   QDHT_QUIC_PORT=8443
   QDHT_WEB_PORT=3000
+  QDHT_BOOTSTRAP=true
   QDHT_DRY_RUN=true
   NODE_BIN=/path/to/node
   NPM_BIN=/path/to/npm
@@ -715,9 +717,13 @@ write_service() {
 	local port="$1"
 	local quic_port="$2"
 	local web_port="${3:-}"
+	local bootstrap="${4:-false}"
 	local web_args=""
 	if [[ -n "$web_port" ]]; then
 		web_args=" --web-port ${web_port}"
+	fi
+	if [[ "$bootstrap" == "true" ]]; then
+		web_args="${web_args} --bootstrap"
 	fi
 	log "writing systemd unit to ${SERVICE_FILE}"
 	local tmp
@@ -813,7 +819,7 @@ install_action() {
 	build_app
 	install_app
 	write_config "$port" "$quic_port" "$web_port"
-	write_service "$port" "$quic_port" "$web_port"
+	write_service "$port" "$quic_port" "$web_port" "$BOOTSTRAP_MODE"
 	configure_proxy "$PROXY_MODE" "$port"
 	restart_service
 	wait_for_node "$port"
@@ -848,7 +854,7 @@ update_action() {
 	web_port="$(parse_config_field webPort)"
 	web_port="${web_port:-}"
 
-	write_service "$port" "$quic_port" "$web_port"
+	write_service "$port" "$quic_port" "$web_port" "$BOOTSTRAP_MODE"
 	run_root systemctl daemon-reload
 	run_root systemctl restart "$SERVICE_NAME"
 	wait_for_node "$port"
@@ -927,6 +933,9 @@ parse_args() {
 				;;
 			--non-interactive)
 				NON_INTERACTIVE=true
+				;;
+			--bootstrap)
+				BOOTSTRAP_MODE=true
 				;;
 			--dry-run)
 				DRY_RUN=true
