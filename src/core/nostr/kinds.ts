@@ -7,6 +7,8 @@ export const QDHT_KIND = {
   REQUEST_RESPONSE: 10805,
   DELTA_REQUEST: 20800,
   DELTA_RESPONSE: 20801,
+  NODE_PROFILE: 30180,
+  SERVICE_RECORD: 30181,
 } as const
 
 export type QDHTKind = (typeof QDHT_KIND)[keyof typeof QDHT_KIND]
@@ -28,6 +30,8 @@ export const QDHT_KIND_ROWS: QDHTKindRow[] = [
   { kind_id: QDHT_KIND.REQUEST_RESPONSE, name: 'request_response', category: 'request', searchable: 0, description: 'Metadata or route search response' },
   { kind_id: QDHT_KIND.DELTA_REQUEST, name: 'delta_request', category: 'transport', searchable: 0, description: 'Delta sync request' },
   { kind_id: QDHT_KIND.DELTA_RESPONSE, name: 'delta_response', category: 'transport', searchable: 0, description: 'Delta sync response' },
+  { kind_id: QDHT_KIND.NODE_PROFILE, name: 'node_profile', category: 'routing', searchable: 1, description: 'Node capability profile' },
+  { kind_id: QDHT_KIND.SERVICE_RECORD, name: 'service_record', category: 'routing', searchable: 1, description: 'Peer endpoint and transport info' },
 ]
 
 export const NOSTR_KIND_ROWS: QDHTKindRow[] = [

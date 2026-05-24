@@ -34,9 +34,41 @@ describe('isQDHTKind', () => {
   })
 })
 
+describe('kinds', () => {
+  it('defines NODE_PROFILE as 30180', () => {
+    expect(QDHT_KIND.NODE_PROFILE).toBe(30180)
+  })
+
+  it('defines SERVICE_RECORD as 30181', () => {
+    expect(QDHT_KIND.SERVICE_RECORD).toBe(30181)
+  })
+
+  it('includes node_profile row in QDHT_KIND_ROWS', () => {
+    const row = QDHT_KIND_ROWS.find((r) => r.kind_id === 30180)
+    expect(row).toBeDefined()
+    expect(row?.name).toBe('node_profile')
+    expect(row?.category).toBe('routing')
+    expect(row?.searchable).toBe(1)
+  })
+
+  it('includes service_record row in QDHT_KIND_ROWS', () => {
+    const row = QDHT_KIND_ROWS.find((r) => r.kind_id === 30181)
+    expect(row).toBeDefined()
+    expect(row?.name).toBe('service_record')
+    expect(row?.category).toBe('routing')
+    expect(row?.searchable).toBe(1)
+  })
+
+  it('includes both new kinds in NOSTR_KIND_ROWS', () => {
+    const ids = NOSTR_KIND_ROWS.map((r) => r.kind_id)
+    expect(ids).toContain(30180)
+    expect(ids).toContain(30181)
+  })
+})
+
 describe('QDHT_KIND_ROWS', () => {
   it('includes metadata for each known kind', () => {
-    expect(QDHT_KIND_ROWS).toHaveLength(8)
+    expect(QDHT_KIND_ROWS).toHaveLength(10)
     expect(QDHT_KIND_ROWS.find((row) => row.kind_id === QDHT_KIND.ANNOUNCEMENT)).toMatchObject({
       name: 'announcement',
       category: 'content',
@@ -52,7 +84,7 @@ describe('QDHT_KIND_ROWS', () => {
 
 describe('NOSTR_KIND_ROWS', () => {
   it('includes routing kinds used by the live node', () => {
-    expect(NOSTR_KIND_ROWS).toHaveLength(10)
+    expect(NOSTR_KIND_ROWS).toHaveLength(12)
     expect(NOSTR_KIND_ROWS.find((row) => row.kind_id === 30800)).toMatchObject({
       name: 'observed_address',
       category: 'routing',
