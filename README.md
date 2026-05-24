@@ -131,6 +131,69 @@ The repo currently includes:
 - content-provider and reachability examples
 - benchmark and stress harnesses
 
+## Discovery Routing
+
+Identity-to-route resolution lives in `src/core/discovery/reachability.ts`. When a node wants to dial a peer by pubkey or Nostr identity reference, it:
+
+1. Normalises the identity reference (npub, hex pubkey, or `_@domain` NIP-05 style) to a canonical form.
+2. Looks up stored route announcements (kind `30181`) in the local event log.
+3. Scores candidates by confidence, sequence number, and observed NAT type.
+4. Returns a `ResolvedRoute` with `bestEndpoint`, optional `fallback`, and a `nat.typeEstimate` field.
+
+Peers also emit observed-address events so each node learns its own externally-visible address without a STUN server. The reachability layer uses those reflections to set `typeEstimate` to one of `open`, `cone`, `symmetric`, or `unknown`.
+
+## Graph Computation Layer
+
+The quantum walk runs in `src/core/graph/`. Three files cooperate:
+
+- `topology.ts` — builds the adjacency structure from connected peers and their reputation scores.
+- `laplacian.ts` — computes the bare graph Laplacian `L = D - A` where `D` is the degree matrix and `A` is the weighted adjacency matrix.
+- `graph-state.ts` — applies the continuous-time quantum walk (CTQW) operator `exp(-iLΔt)` to an initial amplitude vector, then squares amplitudes to get propagation probabilities: `prob(i) = |<i| exp(-iLΔt) |source>|²`.
+
+The propagator (`src/core/propagation/propagator.ts`) wraps graph-state and adds:
+
+- reputation damping: `effective_prob = quantum_prob × reputation_factor` where `reputation_factor = exp(-2γ|rep|t)`
+- a configurable exploration floor so low-probability paths are still sampled occasionally
+- top-k target selection from the resulting probability distribution
+
+This runs as ordinary floating-point matrix math. There is no quantum hardware involved.
+
+## Storage Layer
+
+All persistence goes into a single SQLite file (`qdht.sqlite`) under `dataDir`. Two modules manage it:
+
+- `src/core/storage/sqlite-node-storage.ts` — the raw SQLite adapter. Tables include:
+  - `nostr_events` — all signed events by id, kind, pubkey, created_at, and raw JSON
+  - `event_tags` — flattened tag index for fast `qkey`, `hash`, `name`, `mime`, and `r` lookups
+  - `route_announcements` — parsed route records keyed by identity with endpoint and NAT fields
+  - `observed_addresses` — peer-reflected address records
+- `src/core/storage/content-repository.ts` — content index on top of the event store. Tracks content locations by `qkey` and `hash`, piece manifests, and replica records. Returns `ContentLocation` objects with piece counts, piece size, and optional source URL.
+
+The event store is append-only for Nostr events. Route announcements are upserted by `(identity, sequence)` so only the latest survives.
+
+## Examples
+
+All runnable demos are in `examples/`. See [`examples/README.md`](examples/README.md) for full details.
+
+| File | Description | npm script |
+|---|---|---|
+| `hello-publish-get.ts` | Put a small payload on one node and read it back locally | `npm run example:hello` |
+| `peer-gossip-demo.ts` | Start two nodes and observe peer discovery | `npm run example:gossip` |
+| `sqlite-persistence-demo.ts` | Publish, restart the node, confirm the event store survives | `npm run example:sqlite` |
+| `reachability-reflection-demo.ts` | Peer-observed address reflection, dialback, and relay fallback without DNS | `npm run example:reachability` |
+| `churn-recovery-demo.ts` | Announcement delivery under simulated churn and recovery | `npm run example:churn` |
+| `spam-filter-demo.ts` | Reputation suppression keeping legitimate traffic moving | `npm run example:spam` |
+
+## Transport Fallback
+
+The live node tries transports in preference order:
+
+1. **QUIC** (`quic-adapter.ts`) — low-latency direct UDP, used when both peers are `open` or `cone` NAT.
+2. **WebSocket** (`peer-manager.ts`) — direct TCP connection, used when QUIC is unavailable or the peer is behind symmetric NAT.
+3. **Relay** (`relay-adapter.ts`) — routes events through a Nostr relay, used as the fallback of last resort when direct dial fails.
+
+Transport selection happens in `qdht-node.ts`. All three can coexist; each implements the `Transport` interface in `src/node/transport.ts`. Relay transport adds latency but requires no open ports on either side.
+
 ## Recommended Reading Order
 
 1. [`src/core/README.md`](src/core/README.md)
