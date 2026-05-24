@@ -88,7 +88,7 @@ afterEach(async () => {
 })
 
 describe('bootstrap node e2e', () => {
-  it('two regular nodes discover each other via a bootstrap node', async () => {
+  it('two regular nodes discover and auto-connect via a bootstrap node', async () => {
     const kpBootstrap = generateKeypair()
     const kpA = generateKeypair()
     const kpB = generateKeypair()
@@ -150,6 +150,15 @@ describe('bootstrap node e2e', () => {
 
     const { stdout: peersB } = await runCli(['peers', '--config', configB])
     expect(peersB).toContain(shortBootstrap)
+
+    // Service records should also cause the regular nodes to connect to each other directly
+    await waitFor(async () => {
+      const [{ stdout: peersAAgain }, { stdout: peersBAgain }] = await Promise.all([
+        runCli(['peers', '--config', configA]),
+        runCli(['peers', '--config', configB]),
+      ])
+      return peersAAgain.includes(shortB) && peersBAgain.includes(shortA)
+    }, 10_000)
   }, 30_000)
 
   it('bootstrap node responds to peers command showing connected nodes', async () => {
