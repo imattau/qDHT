@@ -114,6 +114,72 @@ describe('PeerManager', () => {
     expect(pm!.peers().length).toBe(0)
   })
 
+  it('sends a kind 30181 event after handshake when listenAddress is set', async () => {
+    const p = nextPort()
+    pm = new PeerManager({
+      port: p,
+      pubkey: 'a'.repeat(64),
+      privkey: 'a'.repeat(64),
+      listenAddress: `ws://127.0.0.1:${p}`,
+    })
+    await pm.listen()
+
+    const received: unknown[] = []
+    const client = new WebSocket(`ws://127.0.0.1:${p}`)
+    client.on('message', (data: import('ws').RawData) => {
+      received.push(JSON.parse(data.toString()))
+    })
+
+    // Send handshake so PeerManager fires registerPeerPubkey
+    await new Promise<void>((resolve) => {
+      client.on('open', () => {
+        client.send(JSON.stringify({ type: 'handshake', pubkey: 'b'.repeat(64) }))
+        resolve()
+      })
+    })
+
+    await waitFor(() => received.length >= 2) // handshake response + 30181
+
+    const serviceRecord = (received as Array<Record<string, unknown>>).find(
+      (m) => m.kind === 30181,
+    )
+    expect(serviceRecord).toBeDefined()
+    expect(typeof (serviceRecord as Record<string, unknown>).pubkey).toBe('string')
+
+    const tags = (serviceRecord as Record<string, unknown>).tags as string[][]
+    expect(tags.some(([k, v]) => k === 'url' && v === `ws://127.0.0.1:${p}`)).toBe(true)
+    expect(tags.some(([k, v]) => k === 'd' && v === 'main')).toBe(true)
+    expect(tags.some(([k]) => k === 'transport')).toBe(true)
+    safeClose(client)
+  })
+
+  it('does not send 30181 when listenAddress is not set', async () => {
+    const p = nextPort()
+    pm = new PeerManager({ port: p, pubkey: 'c'.repeat(64), privkey: 'c'.repeat(64) })
+    await pm.listen()
+
+    const received: unknown[] = []
+    const client = new WebSocket(`ws://127.0.0.1:${p}`)
+    client.on('message', (data: import('ws').RawData) => {
+      received.push(JSON.parse(data.toString()))
+    })
+
+    await new Promise<void>((resolve) => {
+      client.on('open', () => {
+        client.send(JSON.stringify({ type: 'handshake', pubkey: 'd'.repeat(64) }))
+        resolve()
+      })
+    })
+
+    // Give it a moment and confirm no 30181
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const serviceRecord = (received as Array<Record<string, unknown>>).find(
+      (m) => m.kind === 30181,
+    )
+    expect(serviceRecord).toBeUndefined()
+    safeClose(client)
+  })
+
   it('connects outbound to a peer URL', async () => {
     const p = nextPort()
     const server = new WebSocketServer({ port: p })

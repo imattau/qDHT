@@ -3,6 +3,8 @@ import { WebSocket, WebSocketServer, type RawData } from 'ws'
 import ReconnectingWebSocket from 'reconnecting-websocket'
 import getPort, { portNumbers } from 'get-port'
 import type { Transport } from './transport.js'
+import { signEvent } from '../core/identity/signing.js'
+import { QDHT_KIND } from '../core/nostr/kinds.js'
 
 export interface PeerInfo {
   pubkey: string
@@ -26,6 +28,7 @@ export interface PeerManagerOptions {
   port: number
   pubkey: string
   privkey: string
+  listenAddress?: string
 }
 
 type MessageHandler = (msg: unknown, peerId: string) => void
@@ -290,11 +293,37 @@ export class PeerManager implements Transport {
     this.peerMap.set(pubkey, peer)
     this.urlToPeerId.set(peer.url, pubkey)
     this.notifyConnected(pubkey, peer)
+    this.sendServiceRecord(peer)
 
     const state = this.outboundState.get(peer.url)
     if (state) {
       state.active = true
       state.delayMs = RECONNECT_MIN_MS
+    }
+  }
+
+  private sendServiceRecord(peer: ConnectedPeer): void {
+    if (!this.opts.listenAddress) {
+      return
+    }
+    const now = Math.floor(Date.now() / 1000)
+    const event = signEvent(
+      {
+        kind: QDHT_KIND.SERVICE_RECORD,
+        pubkey: this.opts.pubkey,
+        created_at: now,
+        tags: [
+          ['transport', 'ws'],
+          ['d', 'main'],
+          ['url', this.opts.listenAddress],
+        ],
+        content: '',
+        sig: '',
+      },
+      this.opts.privkey,
+    )
+    if (peer.ws.readyState === WebSocket.OPEN) {
+      peer.ws.send(JSON.stringify(event))
     }
   }
 
