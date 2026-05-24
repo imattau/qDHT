@@ -1,3 +1,4 @@
+import pWaitFor from 'p-wait-for'
 import { isSignedEvent, type SignedNostrEvent } from '../core/nostr/event.js'
 import { verifyEvent, signAnnouncement, signEvent } from '../core/identity/signing.js'
 import { NeighbourStateMap } from '../core/neighbour-state.js'
@@ -137,13 +138,10 @@ export class SyncManager {
       return this.requestResponses.get(requestId) ?? null
     }
 
-    const deadline = Date.now() + timeoutMs
-    while (Date.now() < deadline) {
-      const response = this.requestResponses.get(requestId)
-      if (response) {
-        return response
-      }
-      await new Promise((resolve) => setTimeout(resolve, 25))
+    try {
+      await pWaitFor(() => this.requestResponses.has(requestId), { interval: 25, timeout: timeoutMs })
+    } catch {
+      // TimeoutError — fall through and return whatever we have (or null)
     }
 
     return this.requestResponses.get(requestId) ?? null

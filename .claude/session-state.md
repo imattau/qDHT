@@ -1,83 +1,55 @@
-# Session State: NIP-1984 Internal Reporting
+# Session State Checkpoint: qDHT Library Audit
+Generated: 2026-05-24
+Reason: Context threshold exceeded (66.6%) - delegating audit task
 
-**Task**: Add NIP-1984 reporting to qDHT (propagate through peer network, not Nostr relays)
+## Execution Mode
+**Mode**: interactive
+**Auto-Continue**: false
+**Task**: Audit /home/mattthomson/workspace/qDHT/src for custom code replaceable with npm libraries
 
-## Design
+## Current Task
+Audit non-test .ts files for custom code that could be replaced with npm libraries. Focus on: HTTP clients, retry logic, data structures (LRU, priority queues, bloom filters), encoding/decoding, event emitters, validation, time/date handling.
 
-- **Kind 1984**: NIP-1984 report events
-- **Propagation**: Through qDHT peer graph (like announcements/deltas)
-- **Triggers**: Same bad-actor detection (bad signatures, bad hashes, spam)
-- **Format**: Standard NIP-1984 with tags for reason, content hash, etc.
-- **No relay requirement**: Purely peer-to-peer via sync-manager broadcast
+## Skip These (Already Fixed/Installed)
+**Fixed patterns** (don't suggest again):
+- hexToBytes/bytesToHex → @noble/hashes
+- Jacobi eigensolver → ml-matrix
+- LCG PRNG → seedrandom
+- SHA-256 createHash → @noble/hashes/sha2.js
+- Port-scan loops → get-port
+- WebSocket reconnect/backoff → reconnecting-websocket
 
-## Implementation
+**Already installed deps**:
+- nostr-tools, @noble/hashes, @noble/curves, ml-matrix, seedrandom, get-port, reconnecting-websocket, ws, commander, libp2p, @libp2p/*, multiformats, @matrixai/quic
 
-### 1. Add kind 1984 to kinds.ts
-```typescript
-export const QDHT_KIND = {
-  // ... existing
-  REPORT: 1984,  // NIP-1984 reporting
-}
-```
+## Files to Audit (Full Read + Analysis)
+Read these files completely and identify replaceable custom logic:
 
-### 2. Create report builder in protocol/
-New file: `src/core/protocol/report.ts`
-```typescript
-export interface Report {
-  kind: 1984
-  pubkey: string
-  created_at: number
-  tags: string[][]
-  content: string
-  sig: string
-}
+1. src/core/content/http-provider.ts
+2. src/core/content/nip96-provider.ts
+3. src/core/content/pieces.ts OR piece-fetcher.ts (whichever exists)
+4. src/node/sync-manager.ts
+5. src/node/transport.ts
+6. src/sim/runner/metrics.ts
+7. src/sim/runner/report.ts
+8. src/core/neighbour-state.ts
+9. web/app.js
 
-export function buildReport(opts: {
-  pubkey: string
-  reportedPubkey: string
-  reason: 'spam' | 'invalid_content' | 'bad_hash'
-  content?: string  // optional details
-}): Report {
-  return {
-    kind: 1984,
-    pubkey: opts.pubkey,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ['p', opts.reportedPubkey],
-      ['reason', opts.reason],
-    ],
-    content: opts.content ?? '',
-    sig: '',
-  }
-}
-```
+## Output Format Required
+For each finding, report:
+- **File path** (absolute)
+- **What custom code does**
+- **What library could replace it**
+- **Value** (high/medium/low)
 
-### 3. Update sync-manager
-- Import `buildReport`
-- When detecting bad signature: create and broadcast report with reason='invalid_content'
-- When detecting bad hash: create and broadcast report with reason='bad_hash'
-- Handle incoming kind 1984 reports in message router
-- Include reports in delta responses (like reputation deltas)
-- Store reports in eventLog
+Skip domain-specific DHT logic. Focus only on: HTTP clients, retry logic, data structures, encoding/decoding, event emitters, validation, time/date handling.
 
-### 4. Wire into existing penalty code
-Replace/augment the reputation delta broadcasts with:
-1. Create kind 1984 report event
-2. Broadcast it like announcements (propagates through peer graph)
-3. Still send reputation delta for local scoring
+## Continuation Instructions
+1. Read each file completely (use Read tool, not Bash)
+2. Identify custom logic not using dependencies
+3. Check if a library in npm/Context7 already covers it
+4. Build findings list
+5. Return comprehensive audit report as final assistant message (NOT a file)
 
-## NIP-1984 Reference
-https://github.com/nostr-protocol/nips/blob/master/84.md
-- `p` tag: pubkey being reported
-- `e` tag: event id being reported (optional)
-- `reason` tag: spam | abuse | illegal | profanity | etc
-- content: explanation
-
-For qDHT:
-- reason: 'spam' | 'invalid_content' | 'bad_hash'
-- tags: [['p', reportedPubkey], ['reason', reason]]
-
-## Testing
-- Unit test: buildReport creates valid events
-- Integration: nodes exchange reports and see them in eventLog
-- Spam scenario: verify reports are generated and propagated
+## Key Note
+This is a READ-ONLY audit. You have Bash and Read tools only. Do NOT create files, do NOT modify code. Just analyze and report findings.

@@ -46,6 +46,7 @@
     "ml-matrix": "^6.12.2",
     "multiformats": "^14.0.0",
     "nostr-tools": "^2.23.5",
+    "p-wait-for": "^6.0.0",
     "reconnecting-websocket": "^4.4.0",
     "seedrandom": "^3.0.5",
     "tsc": "^2.0.4",
