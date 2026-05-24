@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { sha256 as _sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { SqliteConnection, type SqliteStatement } from '../core/sqlite/sqlite-connection.js'
@@ -21,7 +22,7 @@ interface ContentRow {
 }
 
 function sha256(data: Buffer): string {
-  return createHash('sha256').update(data).digest('hex')
+  return bytesToHex(_sha256(data))
 }
 
 function splitPieces(data: Buffer): Buffer[] {

@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 import { EventEmitter } from 'node:events'
 import { HttpProvider } from '../core/content/http-provider.js'
 import { selectPiecesToFetch, type PieceProvider } from '../core/content/piece-fetcher.js'
@@ -80,7 +81,7 @@ export class PieceFetcherService extends EventEmitter {
     await Promise.all(Array.from({ length: workerCount }, () => worker()))
 
     const assembled = Buffer.concat(pieces.map((piece) => piece ?? Buffer.alloc(0)))
-    const digest = createHash('sha256').update(assembled).digest('hex')
+    const digest = bytesToHex(sha256(assembled))
     if (digest !== hash) {
       for (const task of selected) {
         this.reputationMap.adjust(task.provider, -0.2)

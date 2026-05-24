@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { sha256 as _sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 import type { ContentIndexEntry, ContentIndexRepository, ContentLocation, PutMeta } from './content-repository.js'
 import type { NostrEventRepository, StoredNostrEvent } from './event-repository.js'
 import type { NodeStorage } from './node-storage.js'
@@ -6,7 +7,7 @@ import type { NodeStorage } from './node-storage.js'
 const PIECE_SIZE = 512 * 1024
 
 function sha256(data: Buffer): string {
-  return createHash('sha256').update(data).digest('hex')
+  return bytesToHex(_sha256(data))
 }
 
 function splitPieces(data: Buffer): Buffer[] {

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
+import ReconnectingWebSocket from 'reconnecting-websocket'
+import getPort, { portNumbers } from 'get-port'
 import type { Transport } from './transport.js'
 
 export interface PeerInfo {
@@ -68,47 +70,24 @@ export class PeerManager implements Transport {
       return this.listeningPort ?? this.opts.port
     }
 
-    const startPort = this.opts.port
-    const maxPort = 65535
+    const port = await getPort({ port: this.opts.port === 0 ? undefined : portNumbers(this.opts.port, 65535) })
 
-    for (let port = startPort; port <= maxPort; port += 1) {
-      const attempt = await new Promise<{ server: WebSocketServer; port: number } | null>((resolve, reject) => {
-        const server = new WebSocketServer({ port })
-        const cleanup = (): void => {
-          server.removeAllListeners('listening')
-          server.removeAllListeners('error')
-        }
-        server.once('listening', () => {
-          cleanup()
-          resolve({ server, port })
-        })
-        server.once('error', (err: NodeJS.ErrnoException) => {
-          cleanup()
-          server.close(() => {
-            if (err.code === 'EADDRINUSE') {
-              resolve(null)
-              return
-            }
-            reject(err)
-          })
-        })
-        server.on('connection', (ws, req) => {
-          const url = `ws://${req.socket.remoteAddress ?? '127.0.0.1'}:${req.socket.remotePort ?? port}`
-          this.attachPeer(ws, url, false)
-        })
+    await new Promise<void>((resolve, reject) => {
+      const server = new WebSocketServer({ port })
+      server.once('listening', () => {
+        this.server = server
+        this.listeningPort = port
+        resolve()
       })
+      server.once('error', reject)
+      server.on('connection', (ws, req) => {
+        const url = `ws://${req.socket.remoteAddress ?? '127.0.0.1'}:${req.socket.remotePort ?? port}`
+        this.attachPeer(ws, url, false)
+      })
+    })
 
-      if (!attempt) {
-        continue
-      }
-
-      this.server = attempt.server
-      this.listeningPort = attempt.port
-      this.startPingLoop()
-      return attempt.port
-    }
-
-    throw new Error(`Unable to bind WebSocket listener starting at port ${startPort}`)
+    this.startPingLoop()
+    return this.listeningPort!
   }
 
   connect(url: string): void {
@@ -116,38 +95,46 @@ export class PeerManager implements Transport {
       return
     }
 
-    const existing = this.outboundState.get(url)
-    if (existing?.active) {
+    if (this.outboundState.get(url)?.active) {
       return
     }
 
-    if (!existing) {
+    if (!this.outboundState.has(url)) {
       this.outboundState.set(url, { delayMs: RECONNECT_MIN_MS, timer: null, active: false })
-    } else if (existing.timer) {
-      clearTimeout(existing.timer)
-      existing.timer = null
     }
 
-    const ws = new WebSocket(url)
-    ws.once('open', () => {
-      const peer = this.attachPeer(ws, url, true)
+    const rws = new ReconnectingWebSocket(url, [], {
+      WebSocket: WebSocket as unknown as typeof ReconnectingWebSocket.prototype.constructor,
+      maxRetries: Infinity,
+      reconnectionDelayGrowFactor: 2,
+      minReconnectionDelay: RECONNECT_MIN_MS,
+      maxReconnectionDelay: RECONNECT_MAX_MS,
+    })
+
+    rws.addEventListener('open', () => {
+      const nativeWs = (rws as unknown as { _ws: WebSocket })._ws ?? rws
+      const peer = this.attachPeer(nativeWs as unknown as WebSocket, url, true)
       const state = this.outboundState.get(url)
       if (state) {
         state.active = true
-        if (state.timer) {
-          clearTimeout(state.timer)
-          state.timer = null
-        }
       }
       peer.ws.send(JSON.stringify({ type: HANDSHAKE, pubkey: this.opts.pubkey }))
     })
-    ws.on('error', () => {
-      this.scheduleReconnect(url)
-    })
-    ws.on('close', () => {
+    rws.addEventListener('close', () => {
       this.detachUrl(url)
-      this.scheduleReconnect(url)
+      const state = this.outboundState.get(url)
+      if (state) {
+        state.active = false
+      }
     })
+    rws.addEventListener('error', () => {
+      // ReconnectingWebSocket handles retry automatically
+    })
+
+    const state = this.outboundState.get(url)!
+    state.timer = null
+    // Store rws reference for cleanup
+    ;(state as unknown as Record<string, unknown>).rws = rws
   }
 
   broadcast(msg: unknown, excludePeerId?: string): void {
@@ -209,6 +196,10 @@ export class PeerManager implements Transport {
       if (state.timer) {
         clearTimeout(state.timer)
         state.timer = null
+      }
+      const rws = (state as unknown as Record<string, unknown>).rws as ReconnectingWebSocket | undefined
+      if (rws) {
+        rws.close()
       }
     }
 
@@ -356,25 +347,6 @@ export class PeerManager implements Transport {
     for (const handler of this.transportDisconnectedHandlers) {
       handler(peerId)
     }
-  }
-
-  private scheduleReconnect(url: string): void {
-    const state = this.outboundState.get(url)
-    if (!state || this.closed || state.active) {
-      return
-    }
-    if (state.timer) {
-      return
-    }
-
-    const delay = state.delayMs
-    state.timer = setTimeout(() => {
-      state.timer = null
-      if (!this.closed) {
-        this.connect(url)
-      }
-    }, delay)
-    state.delayMs = Math.min(RECONNECT_MAX_MS, state.delayMs * 2)
   }
 
   private startPingLoop(): void {

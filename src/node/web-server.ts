@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
+import getPort, { portNumbers } from 'get-port'
 import type { ContentLocation, PutMeta } from '../core/storage/content-repository.js'
 import type { PeerInfo, ReplicaInfo, SearchAnnouncementsOptions } from './qdht-node.js'
 import type { ResolvedRoute } from '../core/discovery/reachability.js'
@@ -109,63 +110,28 @@ export class NodeWebServer {
       return
     }
 
-    const startPort = this.webPort
-    const maxPort = 65535
-    function* portSequence(): Generator<number> {
-      if (startPort === 0) {
-        yield 0
-        return
-      }
-      for (let port = startPort; port <= maxPort; port += 1) {
-        yield port
-      }
-    }
+    const port = await getPort({ port: this.webPort === 0 ? undefined : portNumbers(this.webPort, 65535) })
 
-    for (const port of portSequence()) {
-      const attempt = await new Promise<{ server: Server; port: number } | null>((resolve, reject) => {
-        const server = createServer((req, res) => {
-          void this.handleRequest(req, res).catch((err) => {
-            const message = err instanceof Error ? err.message : String(err)
-            if (!res.headersSent) {
-              json(res, 500, { error: message })
-              return
-            }
-            res.destroy()
-          })
+    await new Promise<void>((resolve, reject) => {
+      const server = createServer((req, res) => {
+        void this.handleRequest(req, res).catch((err) => {
+          const message = err instanceof Error ? err.message : String(err)
+          if (!res.headersSent) {
+            json(res, 500, { error: message })
+            return
+          }
+          res.destroy()
         })
-        const cleanup = (): void => {
-          server.removeAllListeners('listening')
-          server.removeAllListeners('error')
-        }
-        server.once('listening', () => {
-          cleanup()
-          const address = server.address()
-          const resolved = typeof address === 'object' && address ? address.port : port
-          resolve({ server, port: resolved })
-        })
-        server.once('error', (err: NodeJS.ErrnoException) => {
-          cleanup()
-          server.close(() => {
-            if (err.code === 'EADDRINUSE') {
-              resolve(null)
-              return
-            }
-            reject(err)
-          })
-        })
-        server.listen(port, '127.0.0.1')
       })
-
-      if (!attempt) {
-        continue
-      }
-
-      this.server = attempt.server
-      this.resolvedPort = attempt.port
-      return
-    }
-
-    throw new Error(`Unable to bind web server starting at port ${startPort}`)
+      server.once('listening', () => {
+        const address = server.address()
+        this.resolvedPort = typeof address === 'object' && address ? address.port : port
+        this.server = server
+        resolve()
+      })
+      server.once('error', reject)
+      server.listen(port, '127.0.0.1')
+    })
   }
 
   async close(): Promise<void> {

@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { SqliteConnection, type SqliteStatement } from '../sqlite/sqlite-connection.js'
 import type { StoredNostrEvent, NostrEventRepository } from '../storage/event-repository.js'
 import { NOSTR_KIND_ROWS } from './kinds.js'
@@ -37,16 +38,14 @@ function eventKey(event: StoredNostrEvent): string {
     return event.id
   }
 
-  return createHash('sha256')
-    .update(JSON.stringify({
-      kind: event.kind,
-      pubkey: event.pubkey,
-      created_at: event.created_at,
-      tags: event.tags,
-      content: event.content,
-      sig: event.sig,
-    }))
-    .digest('hex')
+  return bytesToHex(sha256(utf8ToBytes(JSON.stringify({
+    kind: event.kind,
+    pubkey: event.pubkey,
+    created_at: event.created_at,
+    tags: event.tags,
+    content: event.content,
+    sig: event.sig,
+  }))))
 }
 
 export class NostrSqliteStore implements NostrEventRepository {
